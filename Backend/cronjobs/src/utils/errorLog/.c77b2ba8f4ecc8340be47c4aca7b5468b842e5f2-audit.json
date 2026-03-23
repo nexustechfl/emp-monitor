@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 15
+    },
+    "auditLog": "D:\\Project\\EMPMonitor\\EMP_LIVE\\empmonitor-new\\nodejs\\cronjobs\\src\\utils\\errorLog\\.c77b2ba8f4ecc8340be47c4aca7b5468b842e5f2-audit.json",
+    "files": [
+        {
+            "date": 1733898749848,
+            "name": "D:\\Project\\EMPMonitor\\EMP_LIVE\\empmonitor-new\\nodejs\\cronjobs\\src\\utils\\errorLog\\2024-12-11-error.log",
+            "hash": "dc7da5aa977ec4ae70bc94ced2e4e00773cbe0d21286670e25a01060f064466d"
+        }
+    ],
+    "hashType": "sha256"
+}

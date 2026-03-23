@@ -1,0 +1,5 @@
+2026-03-23 17:11:34 14424 error: ---warning---NOTE: The AWS SDK for JavaScript (v2) is in maintenance mode.
+ SDK releases are limited to address critical bug fixes and security issues only.
+
+Please migrate your code to use AWS SDK for JavaScript (v3).
+For more information, check the blog post at https://a.co/cUPnyil---warning message--undefined---

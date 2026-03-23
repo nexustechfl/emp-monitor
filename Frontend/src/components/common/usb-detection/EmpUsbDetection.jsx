@@ -1,0 +1,195 @@
+import React from "react"
+import { Search, Info, Calendar } from "lucide-react"
+import PaginationComponent from "@/components/common/Pagination"
+import CustomSelect from "@/components/common/elements/CustomSelect"
+import { Input } from "@/components/ui/input"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import EmpUsbDetectionLogo from "@/assets/dlp/usb-detection.svg"
+import { useUsbDetectionStore } from "@/page/protected/admin/usb-detection/usbDetectionStore"
+import { useDlpFilters } from "@/hooks/useDlpFilters"
+
+const DOWNLOAD_OPTIONS = [
+  { label: "Select Option", value: "all" },
+  { label: "PDF", value: "pdf" },
+  { label: "Excel", value: "excel" },
+]
+
+const EmpUsbDetection = () => {
+  const store = useUsbDetectionStore()
+  const { rows, totalDocs, locations, departments, employees, filters, loading, tableLoading } = store
+
+  const {
+    search, setSearch, downloadOption, datePickerRef,
+    totalPages, currentPage,
+    handleLocationChange, handleDepartmentChange, handleEmployeeChange,
+    handlePageSizeChange, handlePageChange, handleDownload,
+  } = useDlpFilters(store)
+
+  if (loading) {
+    return (
+      <div className="fixed inset-0 flex items-center justify-center bg-slate-50">
+        <div className="w-20 h-20 flex items-center justify-center">
+          <video src="/src/assets/ai.webm" autoPlay loop playsInline muted className="w-full h-full object-contain" />
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-9 w-full">
+      {/* Header */}
+      <div className="flex items-center gap-1 mb-7">
+        <div className="flex items-end gap-1 mr-2">
+          <img alt="usb-detection" className="w-24 h-24" src={EmpUsbDetectionLogo} />
+        </div>
+        <div className="border-l-2 border-blue-500 pl-4">
+          <h2 className="text-2xl text-slate-900">
+            <span className="font-black">USB Detection</span>
+          </h2>
+          <p className="text-xs text-gray-400 mt-1 max-w-sm leading-tight">
+            Monitor and log all USB device connections and file transfer activities across managed endpoints.
+          </p>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-x-6 gap-y-4 mb-5">
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Location</label>
+          <CustomSelect placeholder="All Locations" items={locations} selected={filters.locationId} onChange={handleLocationChange} />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Department</label>
+          <CustomSelect placeholder="All Departments" items={departments} selected={filters.departmentId} onChange={handleDepartmentChange} />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Employee</label>
+          <CustomSelect placeholder="All Employees" items={employees} selected={filters.employeeId} onChange={handleEmployeeChange} />
+        </div>
+        <div>
+          <label className="flex items-center gap-1 text-sm font-medium text-slate-700 mb-1.5">
+            Select Date Ranges :
+            <Info className="w-3.5 h-3.5 text-blue-500" />
+          </label>
+          <div className="relative">
+            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            <input ref={datePickerRef} type="text" readOnly className="w-full pl-9 pr-3 py-2 text-[13px] bg-white border border-slate-200 rounded-lg hover:border-slate-300 focus:outline-none focus:border-blue-400 transition-all cursor-pointer" />
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Download</label>
+          <CustomSelect placeholder="Select Option" items={DOWNLOAD_OPTIONS} selected={downloadOption} onChange={handleDownload} />
+        </div>
+      </div>
+
+      {/* Show entries + Search */}
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-[13px] text-gray-500 font-medium">Show</span>
+          <Select value={String(filters.limit)} onValueChange={handlePageSizeChange}>
+            <SelectTrigger className="h-8 w-16 text-[13px] rounded-lg border-gray-200">
+              <SelectValue placeholder="10" />
+            </SelectTrigger>
+            <SelectContent className="rounded-xl">
+              {["10", "25", "50", "100"].map((n) => (
+                <SelectItem key={n} value={n}>{n}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <span className="text-[13px] text-gray-500 font-medium">Entries</span>
+        </div>
+        <div className="relative w-full max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <Input placeholder="Search" value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-10 rounded-full bg-slate-50 border-slate-200 text-xs" />
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="rounded-2xl border border-slate-100 overflow-x-auto bg-slate-50">
+        <Table className="min-w-[1000px] w-full">
+          <TableHeader>
+            <TableRow className="bg-blue-50/80">
+              <TableHead className="text-xs font-semibold text-slate-700">Employee Name</TableHead>
+              <TableHead className="text-xs font-semibold text-slate-700">Employee ID</TableHead>
+              <TableHead className="text-xs font-semibold text-slate-700">Computer</TableHead>
+              <TableHead className="text-xs font-semibold text-slate-700">Location</TableHead>
+              <TableHead className="text-xs font-semibold text-slate-700">Department</TableHead>
+              <TableHead className="text-xs font-semibold text-slate-700">Title</TableHead>
+              <TableHead className="text-xs font-semibold text-slate-700">Date & Time</TableHead>
+              <TableHead className="text-xs font-semibold text-slate-700">Description</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody className="bg-white">
+            {tableLoading ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center text-sm text-gray-400 py-10">
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                    Loading...
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : rows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center text-sm text-gray-400 py-10">No records found</TableCell>
+              </TableRow>
+            ) : (
+              rows.map((row) => (
+                <TableRow key={row._id} className="text-xs text-slate-600">
+                  <TableCell className="font-medium text-slate-700">{row.fullName}</TableCell>
+                  <TableCell>{row.employeeId}</TableCell>
+                  <TableCell className="font-semibold text-slate-700">{row.computer}</TableCell>
+                  <TableCell>{row.location}</TableCell>
+                  <TableCell>{row.department}</TableCell>
+                  <TableCell>
+                    <span className="inline-block px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-[11px] font-medium">{row.title}</span>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">{row.start}</TableCell>
+                  <TableCell className="max-w-[250px]">
+                    <div className="truncate" title={row.description}>
+                      {row.parsedDescription?.map((d, i) => (
+                        <div key={i} className="text-[11px] leading-tight">
+                          {d.fileName && <span className="font-medium">{d.fileName}</span>}
+                          {d.Application && <span className="text-gray-400"> - {d.Application}</span>}
+                          {d.blockReason && <span className="text-red-500 ml-1">({d.blockReason})</span>}
+                          {!d.fileName && d.description && <span>{d.description}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Pagination */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1 py-3.5">
+        <p className="text-[13px] text-gray-500 font-medium">
+          Showing{" "}
+          <span className="font-bold text-gray-700">{totalDocs === 0 ? 0 : (currentPage - 1) * filters.limit + 1}</span>{" "}
+          to <span className="font-bold text-gray-700">{Math.min(currentPage * filters.limit, totalDocs)}</span>{" "}
+          of <span className="font-bold text-blue-600">{totalDocs}</span>
+        </p>
+        <PaginationComponent currentPage={currentPage} totalPages={totalPages} onPageChange={handlePageChange} />
+      </div>
+    </div>
+  )
+}
+
+export default EmpUsbDetection

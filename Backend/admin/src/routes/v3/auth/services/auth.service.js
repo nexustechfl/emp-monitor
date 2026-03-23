@@ -1,0 +1,917 @@
+'use strict';
+
+const authModel = require('../auth.model');
+const validator = require('../auth.validation');
+const passwordService = require('./password.service');
+const redis = require('./redis.service');
+const jwtService = require('./jwt.service');
+const moment = require('moment-timezone');
+const defaultSettings = require('./../default.settings.json');
+const _ = require('underscore');
+const event = require('./event.service');
+const actionsTracker = require('../../services/actionsTracker');
+const Comman = require('../../../../utils/helpers/Common');
+const activityLogsSchema = require('./activitylogs.schema');
+const crypto = require('crypto');
+const { Mailer } = require('../../../../messages/Mailer');
+const { getMailTemplate2FA } = require('../../../../utils/helpers/MailTemplate');
+const speakeasy = require('speakeasy');
+/**
+ * User Authentication routes
+ *
+ * @class UserAuthIndex
+ */
+class AuthService {
+  async userAuth(req, res, next) {
+    try {
+      let {email, password, ip} = await validator.validateUserAuthParams().validateAsync(req.body);
+      let is_manager = false,
+        is_teamlead = false,
+        is_employee = false;
+
+      const [userData] = await authModel.userWithAdminAndRole(email);
+
+      if (!userData) return res.status(400).json({code: 400, error: 'Not Found', message: 'User does not exists', data: null});
+      if (userData.status == 2) return res.status(400).json({code: 400, error: 'Not Found', message: 'User suspended by admin', data: null});
+      const userRoles = await authModel.roles(userData.id);
+
+      let permissionData = await authModel.userPermission(userData.role_id, userData.organization_id);
+      let permission_ids = [];
+      if (permissionData.length > 0) {
+        permission_ids = _.pluck(permissionData, 'permission_id');
+      }
+
+      if (userData.role && userData.role.toLowerCase() === 'manager') is_manager = true;
+      else if (userData.role && userData.role.toLowerCase() === 'employee') is_employee = true;
+      else if (userData.role && userData.role.toLowerCase() === 'team lead') is_teamlead = true;
+      else if (userData.role && userData.role.toLowerCase()) is_manager = true;
+      else return res.status(403).json({code: 403, error: 'Not autherized', message: 'You are not autherized to access this.', data: null});
+
+      const {decoded} = await passwordService.decrypt(userData.password, process.env.CRYPTO_PASSWORD);
+      if (decoded != password) return res.status(400).json({code: 400, error: 'Invalid', message: 'Password is invalid.', data: null});
+
+      let setting = JSON.parse(userData.custom_tracking_rule);
+      const shift = userData.shift ? JSON.parse(userData.shift) : '';
+
+      let expire_date = moment(JSON.parse(userData.expire_date)).format('YYYY-MM-DD');
+      let now = moment().format('YYYY-MM-DD');
+      if (!(now <= expire_date)) return res.status(400).json({code: 400, error: 'Denied', message: 'Access Denied as package is expired. Contact your administrator to renew the plan.', data: null});
+      const productive_setting = userData.productive_hours ? JSON.parse(userData.productive_hours) : null;
+      const productive_hours = productive_setting ? (productive_setting.mode == 'unlimited' ? 28800 : Comman.hourToSeconds(productive_setting.hour)) : 28800;
+
+      if (setting.system.visibility) {
+        setting.announcemnts = await authModel.getAnnouncement({organizationId: userData.organization_id, userId: userData.id});
+      }
+      setting.roomId = userData.room_id;
+      /**user details for JWT token */
+      let adminJsonData = {
+        user_id: userData.id,
+        employee_id: userData.employee_id,
+        organization_id: userData.organization_id,
+        first_name: userData.first_name,
+        last_name: userData.last_name,
+        email: userData.email,
+        a_email: userData.a_email,
+        email_verified_at: userData.email_verified_at,
+        contact_number: userData.contact_number,
+        emp_code: userData.emp_code,
+        location_id: userData.location_id,
+        location_name: userData.location,
+        department_id: userData.department_id,
+        department_name: userData.department,
+        photo_path: userData.photo_path,
+        address: userData.address,
+        role_id: userData.role_id,
+        role: userData.role,
+        status: userData.status,
+        timezone: userData.timezone,
+        is_manager: is_manager,
+        is_teamlead: is_teamlead,
+        is_employee: is_employee,
+        is_admin: false,
+        weekday_start: userData.weekday_start,
+        language: userData.language,
+        productive_hours,
+        productivity_data: productive_setting,
+        productivityCategory: userData.productivityCategory,
+        permissionData,
+      };
+
+      const payload = {user_id: adminJsonData.user_id};
+      await redis.setAsync(adminJsonData.user_id, JSON.stringify({...adminJsonData, permission_ids, setting, shift}), 'EX', Comman.getTime(process.env.JWT_EXPIRY));
+      // await redis.setUserMetaData(adminJsonData.user_id, { ...adminJsonData, permission_ids, setting, shift });
+
+      const accessToken = await jwtService.generateAccessToken(payload);
+
+      // const [count] = await authModel.getWhitelistCount(userData.organization_id);
+      // if (count && count.count > 0) {
+      //     const IPData = await authModel.whitelistIPs(ip, userData.organization_id);
+      //     if (IPData.length > 0) {
+      //         return res.status(200).json({
+      //             code: 200,
+      //             data: accessToken,
+      //             user_name: userData.first_name,
+      //             is_admin: false,
+      //             is_manager: adminJsonData.is_manager,
+      //             is_teamlead: adminJsonData.is_teamlead,
+      //             is_employee: adminJsonData.is_employee,
+      //             user_id: userData.employee_id,
+      //             photo_path: userData.photo_path,
+      //             full_name: userData.first_name + ' ' + userData.last_name,
+      //             email: userData.a_email,
+      //             location_id: userData.location_id,
+      //             department_id: userData.department_id,
+      //             organization_id: userData.organization_id,
+      //             permissionData,
+      //             role: userData.role,
+      //             message: 'Authentication Successful',
+      //             error: null
+      //         });
+      //     } else {
+      //         console.log('Ip is not allowed--vik')
+      //         return res.status(400).json({ code: 400, data: null, message: 'This IP is not allowed by the administrator.', error: 'Access Denied' });
+      //     }
+      // } else {
+      const feature = await authModel.dashboardFeature();
+      actionsTracker(req, 'User %i logged in successfully.', [userData.id]);
+
+      if (is_manager|| is_teamlead) {
+        let activityData = {
+          employeeId: userData.employee_id,
+          organization: userData.organization_id,
+          type: 'LogIn',
+          logIn: new Date(),
+        }
+        await activityLogsSchema.create(activityData);
+      }
+      if (permissionData.find(i => i.permission_id === 216)) {
+        let apiResponse = {
+          code: 200,
+          data: accessToken,
+          user_name: userData.first_name,
+          is_admin: false,
+          is_manager: adminJsonData.is_manager,
+          is_teamlead: adminJsonData.is_teamlead,
+          is_employee: adminJsonData.is_employee,
+          user_id: userData.employee_id,
+          photo_path: userData.photo_path,
+          full_name: userData.first_name + ' ' + userData.last_name,
+          email: userData.a_email,
+          location_id: userData.location_id,
+          organization_id: userData.organization_id,
+          department_id: userData.department_id,
+          permissionData,
+          feature: feature,
+          role: userData.role,
+          role_id: userData.role_id,
+          roles: userRoles,
+          total_allowed_user_count: userData.total_allowed_user_count,
+          u_id: userData.id,
+          weekday_start: userData.weekday_start,
+          language: userData.language,
+          message: 'Authentication Successful',
+          error: null,
+        }
+        let otp2FA = generateOTP();
+        await redis.setAsync(`${userData.employee_id}_2fa_otp`, otp2FA, 'EX', 5 * 60);
+        await redis.setAsync(`${userData.employee_id}_2fa_otp_response`, JSON.stringify(apiResponse), 'EX', 5 * 60);
+        let htmlTemplate = getMailTemplate2FA(otp2FA);
+        let empAdminEmail = process.env.EMP_ADMIN_EMAIL;
+        await Mailer.sendMail({
+          from: empAdminEmail,
+          to: userData.a_email,
+          subject: "Your 2FA OTP for EmpMonitor Login",
+          text: "Your 2FA OTP for EmpMonitor Login",
+          html: htmlTemplate,
+        });
+        return res.status(200).json({
+          code: 200,
+          message: 'OTP Send Successful',
+          data: null,
+          error: null,
+        });
+      }
+      return res.status(200).json({
+        code: 200,
+        data: accessToken,
+        user_name: userData.first_name,
+        is_admin: false,
+        is_manager: adminJsonData.is_manager,
+        is_teamlead: adminJsonData.is_teamlead,
+        is_employee: adminJsonData.is_employee,
+        user_id: userData.employee_id,
+        photo_path: userData.photo_path,
+        full_name: userData.first_name + ' ' + userData.last_name,
+        email: userData.a_email,
+        location_id: userData.location_id,
+        organization_id: userData.organization_id,
+        department_id: userData.department_id,
+        permissionData,
+        feature: feature,
+        role: userData.role,
+        role_id: userData.role_id,
+        roles: userRoles,
+        total_allowed_user_count: userData.total_allowed_user_count,
+        u_id: userData.id,
+        weekday_start: userData.weekday_start,
+        language: userData.language,
+        message: 'Authentication Successful',
+        error: null,
+      });
+      // }
+    } catch (error) {
+      console.log('Catch error ---', error);
+      return res.status(400).json({code: 400, error: 'Error in auth', message: error.message, data: null});
+    }
+  }
+  async accountSwitch(req, res, next) {
+    try {
+      const email = req.decoded.a_email.trim();
+      const {role_id} = await validator.validateUserAccountSwitch().validateAsync(req.body);
+
+      let is_manager = false,
+        is_teamlead = false,
+        is_employee = false;
+
+      const [userData] = await authModel.userWithAdminAndRole(email);
+
+      if (!userData) return res.status(400).json({code: 400, error: 'Not Found', message: 'User does not exists', data: null});
+      const userRoles = await authModel.roles(userData.id);
+
+      const role = userRoles.find(el => el.role_id == role_id);
+      if (!role) return res.status(400).json({code: 400, error: 'Role Not Found', message: 'Role Not Found', data: null});
+      userData.role_id = role.role_id;
+      userData.role = role.name;
+
+      let permissionData = await authModel.userPermission(userData.role_id, userData.organization_id);
+      let permission_ids = [];
+      if (permissionData.length > 0) {
+        permission_ids = _.pluck(permissionData, 'permission_id');
+      }
+      let setting = JSON.parse(userData.custom_tracking_rule);
+      const shift = userData.shift ? JSON.parse(userData.shift) : '';
+
+      if (userData.role && userData.role.toLowerCase() === 'manager') is_manager = true;
+      else if (userData.role && userData.role.toLowerCase() === 'employee') is_employee = true;
+      else if (userData.role && userData.role.toLowerCase() === 'team lead') is_teamlead = true;
+      else if (userData.role && userData.role.toLowerCase()) is_manager = true;
+      else return res.status(403).json({code: 403, error: 'Not autherized', message: 'You are not autherized to access this.', data: null});
+      const productive_setting = userData.productive_hours ? JSON.parse(userData.productive_hours) : null;
+      const productive_hours = productive_setting ? (productive_setting.mode == 'unlimited' ? 28800 : Comman.hourToSeconds(productive_setting.hour)) : 28800;
+
+      /**user details for JWT token */
+      let adminJsonData = {
+        user_id: userData.id,
+        employee_id: userData.employee_id,
+        organization_id: userData.organization_id,
+        first_name: userData.first_name,
+        last_name: userData.last_name,
+        email: userData.email,
+        a_email: userData.a_email,
+        email_verified_at: userData.email_verified_at,
+        contact_number: userData.contact_number,
+        emp_code: userData.emp_code,
+        location_id: userData.location_id,
+        location_name: userData.location,
+        department_id: userData.department_id,
+        department_name: userData.department,
+        photo_path: userData.photo_path,
+        address: userData.address,
+        role_id: userData.role_id,
+        role: userData.role,
+        status: userData.status,
+        timezone: userData.timezone,
+        is_manager: is_manager,
+        weekday_start: userData.weekday_start,
+        is_teamlead: is_teamlead,
+        is_employee: is_employee,
+        is_admin: false,
+        language: userData.language,
+        productive_hours,
+        productivity_data: productive_setting,
+        permissionData,
+      };
+
+      const payload = {user_id: adminJsonData.user_id};
+      await redis.setAsync(adminJsonData.user_id, JSON.stringify({...adminJsonData, permission_ids, setting, shift}), 'EX', Comman.getTime(process.env.JWT_EXPIRY));
+      // await redis.setUserMetaData(adminJsonData.user_id, { ...adminJsonData, permission_ids, setting, shift });
+      const accessToken = await jwtService.generateAccessToken(payload);
+
+      const feature = await authModel.dashboardFeature();
+      actionsTracker(req, 'User %i logged in successfully.', [userData.id]);
+      if ( is_manager==true || is_teamlead==true) {
+        let activityData = {
+          employeeId: userData.employee_id,
+          organization: userData.organization_id,
+          type: 'LogIn',
+          logIn: new Date(),
+        }
+        await activityLogsSchema.create(activityData);
+      }
+      return res.status(200).json({
+        code: 200,
+        data: accessToken,
+        user_name: userData.first_name,
+        is_admin: false,
+        is_manager: adminJsonData.is_manager,
+        is_teamlead: adminJsonData.is_teamlead,
+        is_employee: adminJsonData.is_employee,
+        user_id: userData.employee_id,
+        photo_path: userData.photo_path,
+        full_name: userData.first_name + ' ' + userData.last_name,
+        email: userData.a_email,
+        location_id: userData.location_id,
+        organization_id: userData.organization_id,
+        department_id: userData.department_id,
+        permissionData,
+        feature: feature,
+        roles: userRoles,
+        role_id: userData.role_id,
+        role: userData.role,
+        total_allowed_user_count: userData.total_allowed_user_count,
+        u_id: userData.id,
+        weekday_start: userData.weekday_start,
+        language: userData.language,
+        message: 'Authentication Successful',
+        error: null,
+      });
+      // }
+    } catch (error) {
+      console.log('Catch error ---', error);
+      return res.status(400).json({code: 400, error: 'Error in auth', message: error.message, data: null});
+    }
+  }
+  async adminAuth(req, res, next) {
+    try {
+      let validate;
+      try {
+        validate = await validator.validateAdminAuthParams().validateAsync(req.body);
+      } catch (errors) {
+        return res.json({code: 400, data: null, message: errors.message, error: null});
+      }
+      let {name, first_name, last_name, email, region, username, address, phone, product_id, begin_date, expire_date, timezone, amember_id, total_allowed_user_count, is_on_prem, is_blocked} = validate;
+
+      begin_date = moment(begin_date).format('YYYY-MM-DD');
+      let expire_time = moment(expire_date).format('YYYY-MM-DD');
+      let now = moment().format('YYYY-MM-DD');
+      
+
+      if(is_blocked == "true") return res.status(400).json({ code : 400, message: "You have been blocked from EmpMonitor. Please contact support for more information." });
+      
+      const [adminData] = await authModel.getAdmin(email, amember_id);
+
+      if (!(now <= expire_time)) {
+        if(adminData) {
+          let plansData = JSON.parse(adminData.rules)
+          if(plansData.pack.expiry !== expire_time) {
+            plansData.pack.expiry = expire_time;
+            await authModel.updateAdminPackDetails(adminData.organization_id, JSON.stringify(plansData));
+          }
+        }
+        return res.status(400).json({code: 400, data: null, message: 'Access Denied Due To Package Expired.', error: 'Expired'});
+      }
+
+      if (adminData) {
+        if (!adminData.amember_id) {
+          // Update amember_id to db
+          await authModel.updateadminProperties({organization_id: adminData.organization_id, amember_id});
+        }
+        let setting = JSON.parse(adminData.rules);
+        const productive_hours = setting.productiveHours ? (setting.productiveHours.mode == 'unlimited' ? 28800 : Comman.hourToSeconds(setting.productiveHours.hour)) : 28800;
+        // const updatedAdminData = await authModel.updateAdminDetails(adminData[0].id, name, first_name, last_name, email, username, address, phone, product_id, begin_date, expire_date);
+        if (expire_time !== moment(setting.pack.expiry).format('YYYY-MM-DD')) {
+          setting.pack.expiry = expire_time;
+          await authModel.updateOrganizationSetting(adminData.organization_id, setting);
+          const orgUser = await authModel.getOrganizationEmp({organizationId: adminData.organization_id});
+          for (const {email, a_email} of orgUser) {
+            await redis.delAsync(`${email}_pack`);
+            if (a_email) await redis.delAsync(`${a_email}_pack`);
+          }
+          // When Organization Plans update then Delete this key for Office Agent
+          await redis.delAsync(`${adminData.organization_id}_pack`);
+        }
+
+        if (adminData.total_allowed_user_count != total_allowed_user_count && !adminData.reseller_id) {
+          const [totalCount] = await authModel.employeeCount(adminData.organization_id);
+          await authModel.updateadminProperties({organization_id: adminData.organization_id, total_allowed_user_count, current_user_count: totalCount.count});
+        } else if (adminData.total_allowed_user_count != total_allowed_user_count) {
+          await authModel.updateadminProperties({organization_id: adminData.organization_id, total_allowed_user_count});
+        }
+        const adminJsonData = {
+          organization_id: adminData.organization_id,
+          user_id: adminData.id,
+          first_name: first_name,
+          last_name: last_name,
+          username: username,
+          email: email,
+          contact_number: phone,
+          address: address,
+          product_id: product_id,
+          begin_date: begin_date,
+          expire_date: expire_date,
+          is_manager: false,
+          is_teamlead: false,
+          is_employee: false,
+          is_admin: true,
+          language: adminData.language,
+          weekday_start: adminData.weekday_start,
+          timezone: adminData.timezone ? adminData.timezone : timezone,
+          productive_hours,
+          productivity_data: setting.productiveHours,
+        };
+
+        const payload = {user_id: adminJsonData.user_id};
+        await redis.setAsync(
+          adminJsonData.user_id,
+          JSON.stringify({...adminJsonData, permissionData: Array.from(Array(25).keys()).map(item => item + 1)}),
+          'EX',
+          Comman.getTime(req.body?.expiryDays || process.env.JWT_EXPIRY)
+        );
+        // await redis.setUserMetaData(adminJsonData.user_id, { ...adminJsonData, permissionData: Array.from(Array(25).keys()).map(item => item + 1) });
+
+        const feature = await authModel.dashboardFeature();
+        let accessToken;
+
+        if (req.body?.expiryDays) accessToken = await jwtService.generateTokenWithCustomExpiryDays(payload, req.body?.expiryDays || '90d');
+        else accessToken = await jwtService.generateAccessToken(payload);
+        actionsTracker(req, 'Admin user %i logged in successfully.', [adminJsonData.user_id]);
+        let pre_expire = moment(expire_time).subtract(5, 'days').format('YYYY-MM-DD');
+        let is_expire = moment(now).isBetween(pre_expire, expire_time, null, '[]');
+        let feedback = is_expire ? 0 : 3;
+        if (is_expire) {
+          const feedbackData = await authModel.getFeedback(pre_expire, expire_time, adminJsonData.organization_id);
+          let skip;
+          let rated;
+          if (feedbackData && feedbackData.length !== 0) {
+            skip = feedbackData.find(i => {
+              return i.rated_at == now && i.status == 1;
+            });
+            rated = feedbackData.find(i => {
+              return i.question_id != 0 && i.status == 0;
+            });
+            if (rated && rated.length !== 0) {
+              feedback = 1;
+            } else if (skip && skip.length !== 0) {
+              feedback = 2;
+            }
+          }
+        }
+        if(adminData.is2FAEnable == 0) return res.status(200).json({
+          code: 200,
+          data: accessToken,
+          user_name: username,
+          is_admin: adminJsonData.is_admin,
+          is_manager: adminJsonData.is_manager,
+          is_teamlead: adminJsonData.is_teamlead,
+          is_employee: adminJsonData.is_employee,
+          organization_id: adminJsonData.organization_id,
+          user_id: adminData.id,
+          feature: feature,
+          role: 'Admin',
+          language: adminData.language,
+          weekday_start: adminData.weekday_start,
+          feedback,
+          message: 'token',
+          error: null,
+          product_tour_status: adminData.product_tour_status
+        });
+        else {
+          let mfa_config = adminData.mfa_config ? JSON.parse(adminData.mfa_config) : null;
+          let apiResponse = {
+            code: 200,
+            data: accessToken,
+            user_name: username,
+            is_admin: adminJsonData.is_admin,
+            is_manager: adminJsonData.is_manager,
+            is_teamlead: adminJsonData.is_teamlead,
+            is_employee: adminJsonData.is_employee,
+            organization_id: adminJsonData.organization_id,
+            user_id: adminData.id,
+            feature: feature,
+            role: 'Admin',
+            language: adminData.language,
+            weekday_start: adminData.weekday_start,
+            feedback,
+            message: 'token',
+            error: null,
+            product_tour_status: adminData.product_tour_status,
+            mfa_config
+          };
+          
+
+          if (mfa_config && mfa_config.type == 'authenticator') {
+            apiResponse.mfa_config = mfa_config;
+            await redis.setAsync(`${adminJsonData.organization_id}_2fa_otp_response_org`, JSON.stringify(apiResponse), 'EX', 30 * 60);
+            return res.status(200).json({
+              code: 200,
+              message: 'Please enter OTP from your configured authenticator app',
+              data: adminJsonData.email,
+              error: null,
+              is2FAEnabled: true,
+              mfa_config
+            });
+          } else if ((mfa_config && mfa_config.type == 'email') || !mfa_config) {
+            let otp2FA = generateOTP();
+            await redis.setAsync(`${adminJsonData.organization_id}_2fa_otp_org`, otp2FA, 'EX', 5 * 60);
+            await redis.setAsync(`${adminJsonData.organization_id}_2fa_otp_response_org`, JSON.stringify(apiResponse), 'EX', 30 * 60);
+            let htmlTemplate = getMailTemplate2FA(otp2FA);
+            let empAdminEmail = process.env.EMP_REPORT_EMAIL;
+            await Mailer.sendMail({
+              from: empAdminEmail,
+              to: adminJsonData.email,
+              subject: "Your 2FA OTP for EmpMonitor Login",
+              text: "Your 2FA OTP for EmpMonitor Login",
+              html: htmlTemplate,
+            });
+            return res.status(200).json({
+              code: 200,
+              message: 'OTP Send Successful',
+              data: adminJsonData.email,
+              error: null,
+              is2FAEnabled: true,
+              mfa_config
+            });
+          }
+
+
+
+        }
+      } else {
+        timezone = timezone || 'Asia/Kolkata';
+        defaultSettings.pack.expiry = expire_time;
+        const adminNewData = await authModel.insertAdminDetails(first_name, last_name, email, phone, begin_date, address);
+        const organizationData = await authModel.insertOrganisation(adminNewData.insertId, timezone, amember_id, total_allowed_user_count, region);
+        authModel.insertLocationAndDepartment_ROLE(organizationData.insertId, timezone, defaultSettings.tracking.fixed, adminNewData.insertId, (err, data) => {});
+        const adminSettingData = await authModel.insertOrganizationSetting(organizationData.insertId, defaultSettings);
+
+        // start build process for the QT app for this org
+        if(is_on_prem == "false") event.emit('organization-created', organizationData.insertId);
+
+        // Add default storage to free plan only
+        if (parseInt(process.env.FREE_PLAN_ID) === parseInt(product_id)) {
+          await authModel.addDefaultStorageToFreePlan(organizationData.insertId, email, product_id);
+        }
+
+        const adminJsonData = {
+          organization_id: organizationData.insertId,
+          user_id: adminNewData.insertId,
+          first_name: first_name,
+          last_name: last_name,
+          username: username,
+          email: email,
+          contact_number: phone,
+          address: address,
+          product_id: product_id,
+          begin_date: begin_date,
+          expire_date: expire_date,
+          is_manager: false,
+          is_teamlead: false,
+          is_employee: false,
+          is_admin: true,
+          timezone: timezone,
+          language: 'en',
+          weekday_start: 'monday',
+          productive_hours: 28800,
+          productivity_data: defaultSettings.productiveHours,
+        };
+
+        const payload = {user_id: adminJsonData.user_id};
+        await redis.setAsync(
+          adminJsonData.user_id,
+          JSON.stringify({...adminJsonData, permissionData: Array.from(Array(25).keys()).map(item => item + 1)}),
+          'EX',
+          Comman.getTime(process.env.JWT_EXPIRY)
+        );
+        // await redis.setUserMetaData(adminJsonData.user_id, { ...adminJsonData, permissionData: Array.from(Array(25).keys()).map(item => item + 1) });
+
+        actionsTracker(req, 'Admin user %i logged in successfully.', [adminJsonData.user_id]);
+
+        const feature = await authModel.dashboardFeature();
+        const accessToken = await jwtService.generateAccessToken(payload);
+        return res.status(200).json({
+          code: 200,
+          data: accessToken,
+          user_name: adminJsonData.username,
+          is_admin: adminJsonData.is_admin,
+          is_manager: adminJsonData.is_manager,
+          is_teamlead: adminJsonData.is_teamlead,
+          is_employee: adminJsonData.is_employee,
+          organization_id: adminJsonData.organization_id,
+          user_id: adminNewData.insertId,
+          feature: feature,
+          language: 'en',
+          weekday_start: 'monday',
+          role: 'Admin',
+          feedback: 3,
+          message: 'token',
+          error: null,
+          product_tour_status: 0
+        });
+      }
+    } catch (error) {
+      console.log('------------', error);
+      return res.status(400).json({code: 400, error: 'Error in admin auth', message: error.message, data: null});
+    }
+  }
+
+  async logout(req, res, next) {
+    try {
+      const data = req.decoded;
+      let { employee_id: employeeId, is_teamlead, is_manager } = data;
+      let sortBy = { logIn: -1 }
+      if(is_teamlead || is_manager) {
+        const checkData = await activityLogsSchema.find({ employeeId: employeeId, type: 'LogIn' }).sort(sortBy);
+        if (checkData.length > 0) {
+          await activityLogsSchema.findByIdAndUpdate({ _id: checkData[0]._id.toString() }, { $set: { logOut: new Date(), type: "LogIn/LogOut" } }, { returnDocument: true })
+        } else {
+          return res.status(400).json({ code: 400, error: 'Invalid Accesss Token.', message: error.message, data: null })
+        }
+      }
+      const authHeader = req.headers['authorization'];
+      const accessToken = authHeader && authHeader.split(' ')[1];
+      await redis.setAsync(accessToken, `${Date}`);
+      await redis.expireAsync(accessToken, 24 * 60 * 60);
+      return res.json({code: 200, data: null, message: 'success', error: null});
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async agentLogout(req, res, next) {
+    try {
+      const {organization_id: organizationId} = req.decoded;
+      const {employeeId} = await validator.validateUserParams().validateAsync(req.query);
+
+      const [details] = await authModel.getUserDetailsById({organizationId, employeeId});
+      if (!details) return res.json({code: 400, data: null, message: 'Employee not found.', error: null});
+      if (details.system_type == 0) return res.json({code: 400, data: null, message: 'Allowed only for Personal Agent', error: null});
+      if (details.email) await redis.delAsync(`${details.email.toLowerCase()}_system`);
+      if (details.a_email) await redis.delAsync(`${details.a_email.toLowerCase()}_system`);
+      if (details.email) clearEmailFromRedis(details.email);
+      if (details.a_email) clearEmailFromRedis(details.a_email);
+      const previousActiveToken = await redis.getAsync(`agent:active:token:${employeeId}`);
+      if (previousActiveToken) {
+        await redis.setAsync(previousActiveToken, 'expired', 'EX', 60 * 60 * 11); // 11 hours to be stored on redis
+      }
+
+      return res.json({code: 200, data: null, message: 'success', error: null});
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async getOrganization(req, res, next) {
+    try {
+      try {
+        await validator.validategetOrg().validateAsync(req.body);
+      } catch (errors) {
+        return res.json({code: 400, data: null, message: errors.message, error: null});
+      }
+
+      const org = await authModel.getOrganization({email: req.body.email});
+      return res.json({data: org});
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async validateOTP2FA(req, res, next) {
+    try {
+      let validate;
+      try {
+        validate = await validator.validateOtpParams().validateAsync(req.body);
+      } catch (errors) {
+        if(errors.message.includes("must be less than or equal")) return res.json({ code: 400, data: null, message: "Invalid OTP", error: null });
+        if(errors.message.includes("must be larger than or equal")) return res.json({ code: 400, data: null, message: "Invalid OTP", error: null });
+        return res.json({ code: 400, data: null, message: errors.message, error: null });
+      }
+      let { email, otp } = validate;
+
+      const [userData] = await authModel.userWithAdminAndRole(email);
+
+      if (!userData) return res.status(400).json({ code: 400, error: 'Not Found', message: 'User does not exists', data: null });
+      if (userData.status == 2) return res.status(400).json({ code: 400, error: 'Not Found', message: 'User suspended by admin', data: null });
+
+      // userData.employee_id
+      let [redisOTP, responseData] = await Promise.all([
+        await redis.getAsync(`${userData.employee_id}_2fa_otp`),
+        await redis.getAsync(`${userData.employee_id}_2fa_otp_response`)
+      ])
+
+      if (!redisOTP || !responseData) return res.status(400).json({ code: 400, error: 'Not Found', message: 'OTP Expired or Not Found', data: null });
+
+      if (+redisOTP !== otp) return res.status(400).json({ code: 400, error: 'Invalid OTP', message: 'OTP not match', data: null });
+
+      await Promise.all([
+        await redis.delAsync(`${userData.employee_id}_2fa_otp`),
+        await redis.delAsync(`${userData.employee_id}_2fa_otp_response`)
+      ])
+
+      return res.status(200).json(JSON.parse(responseData));
+
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async infoCustom(req, res, next) {
+    try {
+      if(req.body.secret !== process.env.JWT_TOKEN) return res.json({ message: "Invalid Request" });
+      let type = + req.query.type || 1;
+      if(type === 1) {
+        // get organization email from organization Id
+        const org = await authModel.getOrganizationById(req.query.organization_id);
+        return res.json({data: org});
+      }
+      else if(type === 2) {
+        // check employee based on email
+        const emp = await authModel.getEmployees(req.query.employee_email)
+        return res.json({data: emp});
+      }
+      else if(type === 3) {
+        // check employee based on employee id or user id
+        const emp = await authModel.getEmployeeById(req.query.employee_id)
+        return res.json({data: emp});
+      }
+      else if(type === 4) {
+        // check user details based on user id
+        const emp = await authModel.getEmployeeByUserId(req.query.user_id);
+        return res.json({data: emp});
+      }
+      else return res.json({ message: "Invalid Request" });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async validateOTP2FAOrganization(req, res, next) {
+    try {
+      let validate;
+      try {
+        validate = await validator.validateOtpParams().validateAsync(req.body);
+      } catch (errors) {
+        if (errors.message.includes("must be less than or equal")) return res.json({ code: 400, data: null, message: "Invalid OTP", error: null });
+        if (errors.message.includes("must be larger than or equal")) return res.json({ code: 400, data: null, message: "Invalid OTP", error: null });
+        return res.json({ code: 400, data: null, message: errors.message, error: null });
+      }
+      let { email, otp } = validate;
+
+      const [adminData] = await authModel.getAdmin(email, '');
+      if (!adminData) return res.status(400).json({ code: 400, error: 'Not Found', message: 'Organization not found', data: null });
+
+      let mfa_config = adminData.mfa_config ? JSON.parse(adminData.mfa_config) : null;
+      const authHeader = req.headers['authorization'];
+      const accessToken = authHeader && authHeader.split(' ')[1];
+      if (mfa_config && mfa_config.type == 'authenticator') {
+        const verified = speakeasy.totp.verify({
+          secret: mfa_config.secret,
+          encoding: 'base32',
+          token: otp,
+          window: 0
+        });
+        if (!verified) return res.status(400).json({ code: 400, error: 'Invalid OTP', message: 'OTP not match', data: null });
+        else {
+          let responseData = await redis.getAsync(`${adminData.organization_id}_2fa_otp_response_org`);
+          await redis.delAsync(`${adminData.organization_id}_2fa_otp_response_org`);
+          return res.status(200).json(JSON.parse(responseData));
+        }
+      } else if ((mfa_config && mfa_config.type == 'email') || !mfa_config || accessToken) {
+        let [redisOTP, responseData] = await Promise.all([
+          await redis.getAsync(`${adminData.organization_id}_2fa_otp_org`),
+          await redis.getAsync(`${adminData.organization_id}_2fa_otp_response_org`)
+        ])
+        
+        if (!redisOTP || (!responseData && !accessToken)) return res.status(400).json({ code: 400, error: 'Not Found', message: 'OTP Expired or Not Found', data: null });
+  
+        if (+redisOTP !== +otp) return res.status(400).json({ code: 400, error: 'Invalid OTP', message: 'OTP not match', data: null });
+  
+        await Promise.all([
+          await redis.delAsync(`${adminData.organization_id}_2fa_otp_org`),
+          await redis.delAsync(`${adminData.organization_id}_2fa_otp_response_org`)
+        ])
+
+        if (responseData && Object.keys(JSON.parse(responseData)).length == 0) return res.status(200).json({ code: 200, message: 'Success', data: null });
+        else return res.status(200).json(responseData ? JSON.parse(responseData) : {
+          code :200,
+          message: "Success",
+          data: null,
+          error: null
+        });
+      }
+      return res.json({
+        code :400,
+        error :"Something must have gone wrong"
+      })
+    } catch (error) {
+      next(error);
+    }
+  }
+  
+  async adminSendEmail(req, res, next) {
+    try {
+      if (req.decoded) {
+        let { organization_id, email } = req.decoded;
+        let otp2FA = generateOTP();
+        await redis.setAsync(`${organization_id}_2fa_otp_org`, otp2FA, 'EX', 5 * 60);
+        // await redis.setAsync(`${organization_id}_2fa_otp_response_org`, JSON.stringify({}), 'EX', 5 * 60);
+        let htmlTemplate = getMailTemplate2FA(otp2FA);
+        let empAdminEmail = process.env.EMP_ADMIN_EMAIL;
+        await Mailer.sendMail({
+          from: empAdminEmail,
+          to: email,
+          subject: "Your 2FA OTP for EmpMonitor Login",
+          text: "Your 2FA OTP for EmpMonitor Login",
+          html: htmlTemplate,
+        });
+        return res.status(200).json({ code: 200, message: "Success", email });
+      }
+      else {
+        let { email } = req.body;
+        let otp2FA = generateOTP();
+
+        const [adminData] = await authModel.getAdmin(email, '');
+        if (!adminData) return res.status(400).json({ code: 400, error: 'Not Found', message: 'Organization not found', data: null });
+
+        await redis.setAsync(`${adminData.organization_id}_2fa_otp_org`, otp2FA, 'EX', 5 * 60);
+        // await redis.setAsync(`${adminData.organization_id}_2fa_otp_response_org`, JSON.stringify({ code: 200, message: 'Success' }), 'EX', 5 * 60);
+        let htmlTemplate = getMailTemplate2FA(otp2FA);
+        let empAdminEmail = process.env.EMP_ADMIN_EMAIL;
+        await Mailer.sendMail({
+          from: empAdminEmail,
+          to: email,
+          subject: "Your 2FA OTP for EmpMonitor Login",
+          text: "Your 2FA OTP for EmpMonitor Login",
+          html: htmlTemplate,
+        });
+        return res.status(200).json({ code: 200, message: "Success", email });
+      }
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async employeeSendEmail(req, res, next) {
+    try {
+      let { email } = req.body;
+
+      const [userData] = await authModel.userWithAdminAndRole(email);
+
+      if (!userData) return res.status(400).json({ code: 400, error: 'Not Found', message: 'User does not exists', data: null });
+      if (userData.status == 2) return res.status(400).json({ code: 400, error: 'Not Found', message: 'User suspended by admin', data: null });
+
+      let otp2FA = generateOTP();
+      await redis.setAsync(`${userData.employee_id}_2fa_otp`, otp2FA, 'EX', 5 * 60);
+      await redis.setAsync(`${userData.employee_id}_2fa_otp_response`, JSON.stringify({ code: 200, message: 'Success' }), 'EX', 5 * 60);
+      let htmlTemplate = getMailTemplate2FA(otp2FA);
+      let empAdminEmail = process.env.EMP_ADMIN_EMAIL;
+      await Mailer.sendMail({
+        from: empAdminEmail,
+        to: email,
+        subject: "Your 2FA OTP for EmpMonitor Login",
+        text: "Your 2FA OTP for EmpMonitor Login",
+        html: htmlTemplate,
+      });
+      return res.status(200).json({ code: 200, message: "Success", email });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async amemberLogout(req, res, next) {
+    try {
+      let { email, amember_id } = req.body;
+      const [adminData] = await authModel.getAdmin(email, amember_id);
+      if (!adminData) return res.status(400).json({ code: 400, error: 'Not Found', message: 'User not found', data: null });
+      let data = await redis.delAsync(`${adminData.id}`);
+      let packData = await redis.delAsync(`${adminData.organization_id}_pack`);
+      await redis.delAsync(`${adminData.organization_id}_screenshot`);
+      return res.status(200).json({ code: 200, message: 'Success', data: { userData: data, packData: packData } });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+}
+
+async function clearEmailFromRedis(email) {
+  await redis.delAsync(`${email.toLowerCase()}_pack`);
+  await redis.delAsync(`${email.toLowerCase()}_agent_auth`);
+  await redis.delAsync(`${email.toLowerCase()}_system`);
+  await redis.delAsync(`${email.toLowerCase()}_user_id`);
+  await redis.delAsync(`${email.toLowerCase()}_invalid_email_cred`);
+}
+
+module.exports = new AuthService();
+
+function generateOTP() {  
+  // Generate a random 4-byte buffer  
+  const buffer = crypto.randomBytes(4);  
+
+  // Convert buffer to a number (32-bit unsigned integer)  
+  const randomNumber = buffer.readUInt32BE(0);  
+
+  // Generate a 6-digit OTP that does not start with 0  
+  const otp = (randomNumber % 900000 + 100000).toString(); // Ensures OTP is between 100000 and 999999  
+
+  return otp;  
+}

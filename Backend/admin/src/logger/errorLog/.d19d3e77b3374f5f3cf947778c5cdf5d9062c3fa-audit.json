@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 15
+    },
+    "auditLog": "D:\\EMPMonitor\\EmpOpenSource\\Backend\\admin\\src\\logger\\errorLog\\.d19d3e77b3374f5f3cf947778c5cdf5d9062c3fa-audit.json",
+    "files": [
+        {
+            "date": 1774264901093,
+            "name": "D:\\EMPMonitor\\EmpOpenSource\\Backend\\admin\\src\\logger\\errorLog\\2026-03-23-error.log",
+            "hash": "7a475b119ffc78ff0a6ba7d448e9827b48cf0439a1ddcc40ed952661a1aab9fc"
+        }
+    ],
+    "hashType": "sha256"
+}

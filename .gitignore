@@ -1,0 +1,9 @@
+node_modules
+dist
+build
+logs
+.vscode
+.cursor
+.claude
+vendor
+.DS_Store

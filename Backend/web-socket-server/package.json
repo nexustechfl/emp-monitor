@@ -1,0 +1,21 @@
+{
+  "name": "WebSocketServer",
+  "version": "0.0.1",
+  "description": "",
+  "author": "",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "prestart": "npm i",
+    "start:dev": "nodemon server.js",
+    "start": "pm2 start server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "jsonwebtoken": "^9.0.2",
+    "node-static": "^0.7.11",
+    "sockjs": "^0.3.24",
+    "winston": "^3.17.0",
+    "winston-daily-rotate-file": "^5.0.0"
+  }
+}
