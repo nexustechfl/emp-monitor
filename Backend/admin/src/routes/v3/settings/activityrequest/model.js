@@ -200,26 +200,29 @@ class Model {
     */
     static getEmployeesByName({ organization_id, search, toAssignId, role_id }) {
         let query;
+        let params;
         if (toAssignId, role_id) {
-            query = `SELECT e.id ,CONCAT(u.first_name ," ", u.last_name) name 
+            query = `SELECT e.id ,CONCAT(u.first_name ," ", u.last_name) name
                     FROM employees e
                     INNER JOIN users u ON u.id = e.user_id
                     INNER JOIN assigned_employees ae ON ae.employee_id=e.id
                     WHERE
-                    e.organization_id=${organization_id} 
-                    AND CONCAT(u.first_name ," ", u.last_name) LIKE '%${search}%'
-                    AND ae.to_assigned_id=${toAssignId}
-                    AND ae.role_id=${role_id}
-                    `
+                    e.organization_id=?
+                    AND CONCAT(u.first_name ," ", u.last_name) LIKE ?
+                    AND ae.to_assigned_id=?
+                    AND ae.role_id=?
+                    `;
+            params = [organization_id, `%${search}%`, toAssignId, role_id];
         } else {
-            query = `SELECT e.id ,CONCAT(u.first_name ," ", u.last_name) name 
+            query = `SELECT e.id ,CONCAT(u.first_name ," ", u.last_name) name
                     FROM employees e
                     INNER JOIN users u ON u.id = e.user_id
                     WHERE
-                    e.organization_id=${organization_id} 
-                    AND CONCAT(u.first_name ," ", u.last_name) LIKE '%${search}%'`
+                    e.organization_id=?
+                    AND CONCAT(u.first_name ," ", u.last_name) LIKE ?`;
+            params = [organization_id, `%${search}%`];
         }
-        return mysql.query(query)
+        return mysql.query(query, params)
     }
 
     /**

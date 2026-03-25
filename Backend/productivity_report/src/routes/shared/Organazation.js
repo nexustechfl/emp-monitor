@@ -8,8 +8,8 @@ class OrganazationService {
         try {
             return await mySql.query(`
                  INSERT INTO integration_organization (name, admin_id, status ,type)
-                 VALUES ('${name}',${admin_id},1,1)
-            `);
+                 VALUES (?,?,1,1)
+            `, [name, admin_id]);
 
         } catch (err) {
             console.log(err)
@@ -21,8 +21,8 @@ class OrganazationService {
     async getOrganazationByName(name, admin_id) {
         try {
             return await mySql.query(`
-                SELECT * FROM integration_organization  WHERE name ='${name}' AND admin_id=${admin_id}  AND type=1
-            `);
+                SELECT * FROM integration_organization  WHERE name =? AND admin_id=?  AND type=1
+            `, [name, admin_id]);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
             return null;
@@ -32,8 +32,8 @@ class OrganazationService {
     async getAllOrganazation(admin_id) {
         try {
             return await mySql.query(`
-                 SELECT * FROM integration_organization  WHERE admin_id =${admin_id}
-            `);
+                 SELECT * FROM integration_organization  WHERE admin_id =?
+            `, [admin_id]);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
             return null;
@@ -44,9 +44,9 @@ class OrganazationService {
             return await mySql.query(`
                 SELECT org.*,u.name AS manager_name
                 FROM integration_organization org
-                LEFT JOIN users u ON u.id =org.manager_id 
-                WHERE org.type='1' AND  (if (${is_organazation_id} ,(org.id=${organazation_id} ),(org.id in (SELECT id FROM integration_organization WHERE admin_id =${admin_id}) )  ))
-            `);
+                LEFT JOIN users u ON u.id =org.manager_id
+                WHERE org.type='1' AND  (if (? ,(org.id=? ),(org.id in (SELECT id FROM integration_organization WHERE admin_id =?) )  ))
+            `, [is_organazation_id, organazation_id, admin_id]);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
             return null;
@@ -56,9 +56,9 @@ class OrganazationService {
     async getOrganazationById(admin_id, organazation_id,) {
         try {
             return await mySql.query(`
-                SELECT * FROM integration_organization 
-                WHERE  id=${organazation_id} AND admin_id =${admin_id}
-            `);
+                SELECT * FROM integration_organization
+                WHERE  id=? AND admin_id =?
+            `, [organazation_id, admin_id]);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
             return null;
@@ -69,8 +69,8 @@ class OrganazationService {
     async deleteOrganization(admin_id, organazation_id) {
         try {
             return await mySql.query(`
-                 DELETE FROM integration_organization  WHERE id =${organazation_id} AND admin_id =${admin_id}
-            `);
+                 DELETE FROM integration_organization  WHERE id =? AND admin_id =?
+            `, [organazation_id, admin_id]);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
             return null;
@@ -80,9 +80,9 @@ class OrganazationService {
     async updateOrganiation(admin_id, organization_id, name, status) {
         try {
             return await mySql.query(`
-                UPDATE integration_organization SET name = '${name}', status = ${status}
-                WHERE id =${organization_id} AND admin_id =${admin_id}
-            `);
+                UPDATE integration_organization SET name = ?, status = ?
+                WHERE id =? AND admin_id =?
+            `, [name, status, organization_id, admin_id]);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
             return null;
@@ -92,8 +92,8 @@ class OrganazationService {
     async checkOrganizationName(organization_id, name, admin_id) {
         try {
             return await mySql.query(`
-             SELECT * FROM integration_organization  WHERE id !=${organization_id} AND admin_id =${admin_id}  AND name='${name}'
-        `);
+             SELECT * FROM integration_organization  WHERE id !=? AND admin_id =?  AND name=?
+        `, [organization_id, admin_id, name]);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
             return null;

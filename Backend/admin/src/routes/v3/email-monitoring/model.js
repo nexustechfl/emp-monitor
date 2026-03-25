@@ -4,15 +4,15 @@ const EmployeeEmailMonitoringLogsModel = require('../../../models/employee_email
 class EmailMonitoringModel {
 
     getEmployeeIdsByDepartment(organization_id, department_id) {
-        return mySql.query(`SELECT e.id FROM employees e WHERE e.organization_id = ${organization_id} AND e.department_id = ${department_id}`);
+        return mySql.query(`SELECT e.id FROM employees e WHERE e.organization_id = ? AND e.department_id = ?`, [organization_id, department_id]);
     }
 
     getEmployeeIdsByLocation(organization_id, location_id) {
-        return mySql.query(`SELECT e.id FROM employees e WHERE e.organization_id = ${organization_id} AND e.location_id = ${location_id}`);
+        return mySql.query(`SELECT e.id FROM employees e WHERE e.organization_id = ? AND e.location_id = ?`, [organization_id, location_id]);
     }
 
     getEmployeeIdsByDepartmentAndLocation(organization_id, department_id, location_id) {
-        return mySql.query(`SELECT e.id FROM employees e WHERE e.organization_id = ${organization_id} AND e.department_id = ${department_id} AND e.location_id = ${location_id}`);
+        return mySql.query(`SELECT e.id FROM employees e WHERE e.organization_id = ? AND e.department_id = ? AND e.location_id = ?`, [organization_id, department_id, location_id]);
     }
 
     getEmailMonitoring(organization_id, employee_ids, employee_id, start_date, end_date, search, type, skip, limit) {
@@ -44,11 +44,11 @@ class EmailMonitoringModel {
     getEmployeeDetails(organization_id, employee_ids) {
         if(!employee_ids.length) return [];
         return mySql.query(`
-            SELECT e.id, u.first_name, u.last_name, u.a_email, e.timezone 
-            FROM employees e 
-            JOIN users u on u.id = e.user_id 
-            WHERE e.organization_id = ${organization_id} AND e.id IN (${employee_ids})
-        `);
+            SELECT e.id, u.first_name, u.last_name, u.a_email, e.timezone
+            FROM employees e
+            JOIN users u on u.id = e.user_id
+            WHERE e.organization_id = ? AND e.id IN (?)
+        `, [organization_id, employee_ids]);
     }
 
 

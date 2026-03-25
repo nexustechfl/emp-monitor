@@ -16,9 +16,9 @@ class User {
         try {
             let role = await mySql.query(
                 `INSERT INTO role (name, params)
-                    SELECT * FROM (SELECT '${name}', '${params}') AS tmp
-                    WHERE NOT EXISTS (SELECT name FROM role WHERE name = '${name}') 
-                    LIMIT 1`
+                    SELECT * FROM (SELECT ?, ?) AS tmp
+                    WHERE NOT EXISTS (SELECT name FROM role WHERE name = ?)
+                    LIMIT 1`, [name, params, name]
             );
             cb(null, role);
         } catch (err) {
@@ -71,9 +71,9 @@ class User {
     async registerUser(name, full_name, email, email_verified_at, password, remember_token, phone, emp_code, location_id, department_id, date_join, photo_path, address, role_id, status, created_at, updated_at, admin_id, timezone, timezone_offset, cb) {
         try {
             let user = await mySql.query(
-                `INSERT INTO users (name,full_name,email  ,password,remember_token,phone,emp_code,location_id ,department_id ,date_join,photo_path,address,role_id,status,admin_id,timezone,timezone_offset)
-                    VALUES ('${name}', '${full_name}', '${email}',  '${password}', ${remember_token},'${phone}','${emp_code}',${location_id},${department_id},'${date_join}','${photo_path}','${address}',${role_id},${status},${admin_id},'${timezone}','${timezone_offset}')
-                `);
+                `INSERT INTO users (name,full_name,email,password,remember_token,phone,emp_code,location_id,department_id,date_join,photo_path,address,role_id,status,admin_id,timezone,timezone_offset)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                `, [name, full_name, email, password, remember_token, phone, emp_code, location_id, department_id, date_join, photo_path, address, role_id, status, admin_id, timezone, timezone_offset]);
             cb(null, user);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
@@ -96,24 +96,24 @@ class User {
         try {
             let user = await mySql.query(
                 `SELECT u.id,u.name,u.email,u.phone,u.emp_code,u.location_id,u.department_id,u.role_id,l.name AS location,CONCAT(u.name, ' ',u.full_name) AS full_name,u.full_name AS last_name,
-                r.name AS role,d.name AS department,au.manager_id,mu.name AS manager_name,(SELECT count(*) FROM users us 
-                WHERE (us.name LIKE '%${name}%'
-                AND if (${is_location}, (us.location_id=${location_id}), (us.location_id in(select lc.id from location lc) ))
-                AND if (${is_role}, (us.role_id=${role_id}), (us.role_id in(select rl.id from role rl) ))
-                AND us.admin_id=${admin_id}
-                AND if (${is_department},(us.department_id in(${department_id})), (us.department_id in(select dept.id from department dept) )) ) ) AS total_count
+                r.name AS role,d.name AS department,au.manager_id,mu.name AS manager_name,(SELECT count(*) FROM users us
+                WHERE (us.name LIKE ?
+                AND if (?, (us.location_id=?), (us.location_id in(select lc.id from location lc) ))
+                AND if (?, (us.role_id=?), (us.role_id in(select rl.id from role rl) ))
+                AND us.admin_id=?
+                AND if (?,(us.department_id in(?)), (us.department_id in(select dept.id from department dept) )) ) ) AS total_count
                 FROM users u
                 INNER JOIN location l ON u.location_id = l.id
                 INNER JOIN role r ON u.role_id = r.id
                 INNER JOIN department d ON u.department_id = d.id
                 LEFT JOIN assigned_user au ON u.id=au.user_id
                 LEFT JOIN users mu ON mu.id=au.manager_id
-                WHERE (if (${is_location}, (u.location_id=${location_id}), (u.location_id in(select lc.id from location lc) ))
-                AND if (${is_role}, (u.role_id=${role_id}), (u.role_id in(select rl.id from role rl) ))
-                AND if (${is_department}, (u.department_id in(${department_id})), (u.department_id in(select dept.id from department dept) )) ) 
-                AND u.admin_id=${admin_id}
-                AND u.name LIKE '%${name}%' LIMIT ${skip},${limit}
-                `);
+                WHERE (if (?, (u.location_id=?), (u.location_id in(select lc.id from location lc) ))
+                AND if (?, (u.role_id=?), (u.role_id in(select rl.id from role rl) ))
+                AND if (?, (u.department_id in(?)), (u.department_id in(select dept.id from department dept) )) )
+                AND u.admin_id=?
+                AND u.name LIKE ? LIMIT ?,?
+                `, [`%${name}%`, is_location, location_id, is_role, role_id, admin_id, is_department, department_id, is_location, location_id, is_role, role_id, is_department, department_id, admin_id, `%${name}%`, skip, limit]);
             cb(null, user);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
@@ -274,8 +274,8 @@ class User {
                 SELECT au.manager_id,u.name AS manager_name,u.full_name as last_name,CONCAT(u.name, ' ',u.full_name) AS full_name
                 FROM assigned_user au
                 LEFT JOIN users u ON u.id=au.manager_id
-                WHERE au.user_id=${user_id} AND au.admin_id=${admin_id} AND role_type='Manager'
-            `);
+                WHERE au.user_id=? AND au.admin_id=? AND role_type='Manager'
+            `, [user_id, admin_id]);
             cb(null, manager);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
@@ -288,8 +288,8 @@ class User {
                 SELECT au.manager_id AS teamlead_id,u.name AS teamlead_name,u.full_name as last_name,CONCAT(u.name, ' ',u.full_name) AS full_name
                 FROM assigned_user au
                 LEFT JOIN users u ON u.id=au.manager_id
-                WHERE au.user_id=${user_id} AND au.admin_id=${admin_id} AND role_type='Team Lead'
-            `);
+                WHERE au.user_id=? AND au.admin_id=? AND role_type='Team Lead'
+            `, [user_id, admin_id]);
     }
 
     /**
@@ -304,10 +304,10 @@ class User {
     async getSingleUserDetails(user_id, admin_id, cb) {
         try {
             let user = await mySql.query(`
-                SELECT * 
-                FROM users u 
-                WHERE u.id=${user_id} AND u.admin_id=${admin_id}
-            `);
+                SELECT *
+                FROM users u
+                WHERE u.id=? AND u.admin_id=?
+            `, [user_id, admin_id]);
             cb(null, user);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
@@ -327,9 +327,9 @@ class User {
     async getEmployeeDetailsByEmail(email, admin_id, cb) {
         try {
             let user = await mySql.query(`
-                SELECT * 
-                FROM users u  
-                WHERE u.email='${email}'`);
+                SELECT *
+                FROM users u
+                WHERE u.email=?`, [email]);
             cb(null, user);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
@@ -341,9 +341,9 @@ class User {
     async getEmployeeDetailsByEmpCode(emp_code, admin_id, cb) {
         try {
             let user = await mySql.query(`
-                SELECT * 
-                FROM users u  
-                WHERE u.emp_code='${emp_code}' AND u.admin_id=${admin_id}`);
+                SELECT *
+                FROM users u
+                WHERE u.emp_code=? AND u.admin_id=?`, [emp_code, admin_id]);
             cb(null, user);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
@@ -368,8 +368,8 @@ class User {
                 LEFT JOIN location l ON u.location_id = l.id
                 INNER JOIN role r ON r.id=u.role_id
                 INNER JOIN department d ON u.department_id = d.id
-                WHERE u.id=${user_id} AND u.admin_id=${admin_id}
-                `);
+                WHERE u.id=? AND u.admin_id=?
+                `, [user_id, admin_id]);
             cb(null, user);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
@@ -393,14 +393,14 @@ class User {
         try {
             let brower_history = await mySql.query(`
                 SELECT b.id,b.browser,b.url,b.user_id,b.create_date,
-                (SELECT count(bh.id) FROM browser_history bh WHERE bh.create_date BETWEEN '${date} 00:00:00' AND '${date} 23:59:59' AND bh.user_id=${user_id}) AS total_count,
+                (SELECT count(bh.id) FROM browser_history bh WHERE bh.create_date BETWEEN ? AND ? AND bh.user_id=?) AS total_count,
                 u.full_name,u.email
                 FROM browser_history b
                 INNER JOIN  users u ON u.id=b.user_id
-                WHERE b.create_date BETWEEN '${date} 00:00:00' AND '${date} 23:59:59' AND b.user_id=${user_id} AND b.admin_id=${admin_id}
+                WHERE b.create_date BETWEEN ? AND ? AND b.user_id=? AND b.admin_id=?
                 ORDER BY b.create_date DESC
-                LIMIT ${skip},${limit}
-            `)
+                LIMIT ?,?
+            `, [`${date} 00:00:00`, `${date} 23:59:59`, user_id, `${date} 00:00:00`, `${date} 23:59:59`, user_id, admin_id, skip, limit])
             cb(null, brower_history);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
@@ -412,14 +412,14 @@ class User {
         try {
             let brower_history = await mySql.query(`
                 SELECT b.id,b.browser,b.url,b.user_id,b.create_date,
-                (SELECT count(bh.id) FROM browser_history bh WHERE bh.create_date BETWEEN '${from_date}' AND '${to_date}' AND bh.user_id=${user_id}) AS total_count,
+                (SELECT count(bh.id) FROM browser_history bh WHERE bh.create_date BETWEEN ? AND ? AND bh.user_id=?) AS total_count,
                 u.full_name,u.email
                 FROM browser_history b
                 INNER JOIN  users u ON u.id=b.user_id
-                WHERE b.create_date BETWEEN '${from_date}' AND '${to_date}' AND b.user_id=${user_id} AND b.admin_id=${admin_id}
+                WHERE b.create_date BETWEEN ? AND ? AND b.user_id=? AND b.admin_id=?
                 ORDER BY b.create_date DESC
-                LIMIT ${skip},${limit}
-            `);
+                LIMIT ?,?
+            `, [from_date, to_date, user_id, from_date, to_date, user_id, admin_id, skip, limit]);
             cb(null, brower_history);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);

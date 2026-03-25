@@ -18,8 +18,8 @@ class LocationCURD {
         try {
             let location = await mySql.query(`
             INSERT INTO location(name, short_name, admin_id, timezone, timezone_offset)
-            VALUES ('${name}','${short_name}',${admin_id},'${timezone}','${timezone_offset}')
-            `);
+            VALUES (?,?,?,?,?)
+            `, [name, short_name, admin_id, timezone, timezone_offset]);
             cb(null, location);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
@@ -42,8 +42,8 @@ class LocationCURD {
             let location = await mySql.query(
                 `SELECT id ,name,short_name,timezone,timezone_offset
                 FROM location
-                WHERE admin_id=${admin_id}
-                LIMIT ${skip}, ${limit}`
+                WHERE admin_id=?
+                LIMIT ?, ?`, [admin_id, skip, limit]
             );
             cb(null, location);
         } catch (err) {
@@ -67,8 +67,8 @@ class LocationCURD {
             let location = await mySql.query(
                 `SELECT id AS location_id,name AS location,short_name,timezone,timezone_offset
                 FROM location
-                WHERE admin_id=${admin_id}
-                LIMIT ${skip}, ${limit}`
+                WHERE admin_id=?
+                LIMIT ?, ?`, [admin_id, skip, limit]
             );
             cb(null, location);
         } catch (err) {
@@ -89,7 +89,7 @@ class LocationCURD {
     async deleteLocation(location_id, admin_id, cb) {
         try {
             let location = await mySql.query(
-                `DELETE FROM location WHERE id=${location_id} AND admin_id=${admin_id}`
+                `DELETE FROM location WHERE id=? AND admin_id=?`, [location_id, admin_id]
             );
             cb(null, location);
         } catch (err) {
@@ -110,7 +110,7 @@ class LocationCURD {
     async searchUserByLocation(location_id, cb) {
         try {
             let location = await mySql.query(
-                `SELECT * FROM users WHERE location_id=${location_id}`
+                `SELECT * FROM users WHERE location_id=?`, [location_id]
             );
             cb(null, location);
         } catch (err) {
@@ -129,11 +129,11 @@ class LocationCURD {
      * @returns {Object} -Data or Error.
      */
     async searchByLocationName(name, location_id, admin_id) {
-        let query = `SELECT name,id 
-                    FROM location 
-                    WHERE name='${name}' AND id !=${location_id} AND admin_id=${admin_id}`
+        let query = `SELECT name,id
+                    FROM location
+                    WHERE name=? AND id !=? AND admin_id=?`;
 
-        return await mySql.query(query);
+        return await mySql.query(query, [name, location_id, admin_id]);
     }
     /**
      * Update location details 
@@ -184,7 +184,7 @@ class LocationCURD {
                 FROM location l
                 INNER JOIN depart_to_loc dl ON l.id = dl.location_id
                 GROUP BY l.id
-                LIMIT ${skip},${limit}`);
+                LIMIT ?,?`, [skip, limit]);
             cb(null, location);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
@@ -207,7 +207,7 @@ class LocationCURD {
                 SELECT dl.department_id AS department_id,d.name
                 FROM depart_to_loc dl
                 INNER JOIN department d ON d.id = dl.department_id
-                WHERE location_id=${location_id} AND dl.admin_id=${admin_id}`);
+                WHERE location_id=? AND dl.admin_id=?`, [location_id, admin_id]);
             cb(null, location);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
@@ -229,8 +229,8 @@ class LocationCURD {
         try {
             let location = await mySql.query(`
                 INSERT INTO depart_to_loc (location_id,department_id,admin_id)
-                VALUES (${location_id},${department_id},${admin_id})
-            `);
+                VALUES (?,?,?)
+            `, [location_id, department_id, admin_id]);
             cb(null, location);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
@@ -239,12 +239,12 @@ class LocationCURD {
     }
 
     /**
-     * Add new department 
+     * Add new department
      *
      * @function addNewDepartment
      * @memberof LocationCURD
      * @param {string} department_name
-     * @param {string} dept_short_name 
+     * @param {string} dept_short_name
      * @param {*} cb
      * @returns {Object} -Data or Error.
      */
@@ -252,12 +252,12 @@ class LocationCURD {
         try {
             let location = await mySql.query(`
             INSERT INTO department (name ,short_name,admin_id)
-                 SELECT * FROM (SELECT '${department_name}' ,'${dept_short_name}',${admin_id}) AS tmp
+                 SELECT * FROM (SELECT ? ,?,?) AS tmp
                  WHERE NOT EXISTS (
-                 SELECT name FROM department WHERE name = '${department_name}' AND admin_id=${admin_id}
+                 SELECT name FROM department WHERE name = ? AND admin_id=?
                  ) LIMIT 1
-              
-            `);
+
+            `, [department_name, dept_short_name, admin_id, department_name, admin_id]);
             cb(null, location);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
@@ -276,11 +276,11 @@ class LocationCURD {
      * @returns {Object} -Data or Error.
      */
     async deleteDepartmentFromLocation(location_id, department_id, admin_id, cb) {
-        let department_ids = "'" + department_id.split(",").join("','") + "'";
+        let department_ids_arr = department_id.split(",");
         try {
             let location = await mySql.query(`
-            DELETE from depart_to_loc WHERE location_id=${location_id} AND department_id IN (${department_ids}) AND admin_id=${admin_id}
-            `)
+            DELETE from depart_to_loc WHERE location_id=? AND department_id IN (?) AND admin_id=?
+            `, [location_id, department_ids_arr, admin_id])
             cb(null, location);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
@@ -300,14 +300,14 @@ class LocationCURD {
      */
     //DELETE from depart_to_loc WHERE location_id=${location_id} AND department_id IN (${department_ids})
     async checkUserInDepartment(location_id, department_id, admin_id, cb) {
-        let department_ids = "'" + department_id.split(",").join("','") + "'";
+        let department_ids_arr = department_id.split(",");
         try {
             let location = await mySql.query(`
             SELECT u.id,u.name ,d.name AS department_name
             FROM users u
             INNER JOIN department d ON d.id=u.department_id
-            WHERE u.location_id=${location_id} AND u.department_id IN (${department_ids}) AND d.admin_id=${admin_id}
-        `)
+            WHERE u.location_id=? AND u.department_id IN (?) AND d.admin_id=?
+        `, [location_id, department_ids_arr, admin_id])
             cb(null, location);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
@@ -328,8 +328,8 @@ class LocationCURD {
     async getSingleLocationWithDepatment(location_id, department_id, admin_id, cb) {
         try {
             let location = await mySql.query(`
-                SELECT * FROM depart_to_loc WHERE location_id=${location_id} AND department_id=${department_id} AND admin_id=${admin_id}
-            `)
+                SELECT * FROM depart_to_loc WHERE location_id=? AND department_id=? AND admin_id=?
+            `, [location_id, department_id, admin_id])
             cb(null, location);
         } catch (err) {
             cb(err, null);
@@ -353,8 +353,8 @@ class LocationCURD {
             FROM depart_to_loc dl
             INNER JOIN   department d ON d.id=dl.department_id
             INNER JOIN   location l ON l.id=dl.location_id
-            WHERE location_id=${location_id} AND department_id IN (${department_ids})  AND dl.admin_id=${admin_id}
-            `);
+            WHERE location_id=? AND department_id IN (?)  AND dl.admin_id=?
+            `, [location_id, department_ids, admin_id]);
             cb(null, location);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
@@ -374,10 +374,10 @@ class LocationCURD {
     async checkLocation(name, admin_id, cb) {
         try {
             let location = await mySql.query(`
-                SELECT id 
-                FROM location 
-                WHERE name='${name}' AND admin_id=${admin_id}
-            `);
+                SELECT id
+                FROM location
+                WHERE name=? AND admin_id=?
+            `, [name, admin_id]);
             cb(null, location);
         } catch (err) {
             console.log(err)
@@ -398,7 +398,7 @@ class LocationCURD {
     async checkDepartment(name, admin_id, cb) {
         try {
             let location = await mySql.query(
-                `SELECT id FROM department WHERE name='${name}' AND admin_id=${admin_id}`
+                `SELECT id FROM department WHERE name=? AND admin_id=?`, [name, admin_id]
             );
             cb(null, location);
         } catch (err) {
@@ -419,10 +419,10 @@ class LocationCURD {
     async getDepartment(admin_id, cb) {
         try {
             let location = await mySql.query(
-                `SELECT id,name 
-                 FROM department  
-                 WHERE admin_id=${admin_id}
-                 `);
+                `SELECT id,name
+                 FROM department
+                 WHERE admin_id=?
+                 `, [admin_id]);
             cb(null, location);
         } catch (err) {
             Logger.error(`----error-----${err}------${__filename}----`);
@@ -438,8 +438,8 @@ class LocationCURD {
                 FROM depart_to_loc dl
                 INNER JOIN   department d ON d.id=dl.department_id
                 INNER JOIN   location l ON l.id=dl.location_id
-                WHERE location_id=${location_id} AND department_id IN (${department_ids}) AND dl.admin_id=${admin_id}
-                `);
+                WHERE location_id=? AND department_id IN (?) AND dl.admin_id=?
+                `, [location_id, department_ids, admin_id]);
                 cb(null, department);
             } else {
                 cb(null, []);
@@ -464,10 +464,8 @@ class LocationCURD {
             if (!name) {
                 name = ['fdgdsfgdsfgsdfg123224234123213', '12132423edewrqweradsfasdfsdf']
             }
-            name = name.map(n => `"${n}"`);
-
             let location = await mySql.query(
-                `SELECT name,id FROM department WHERE name IN (${name}) AND admin_id=${admin_id}`
+                `SELECT name,id FROM department WHERE name IN (?) AND admin_id=?`, [name, admin_id]
             );
             cb(null, location);
 
@@ -512,29 +510,29 @@ class LocationCURD {
     }
 
     async checkLoc(name, admin_id) {
-        return await mySql.query(`SELECT id,timezone,timezone_offset  FROM location WHERE name='${name}' AND admin_id=${admin_id}`);
+        return await mySql.query(`SELECT id,timezone,timezone_offset  FROM location WHERE name=? AND admin_id=?`, [name, admin_id]);
     }
 
     async addLoc(name, short_name, admin_id, timezone, timezone_offset) {
         return await mySql.query(`
             INSERT INTO location (name,short_name,admin_id,timezone,timezone_offset)
-            VALUES ('${name}','${short_name}',${admin_id},'${timezone}',${timezone_offset})
-            `);
+            VALUES (?,?,?,?,?)
+            `, [name, short_name, admin_id, timezone, timezone_offset]);
     }
 
     async checkDept(name, admin_id) {
-        return await mySql.query(`SELECT id FROM department WHERE name='${name}' AND admin_id=${admin_id}`);
+        return await mySql.query(`SELECT id FROM department WHERE name=? AND admin_id=?`, [name, admin_id]);
     }
 
     async getSingleLocWithDept(location_id, department_id, admin_id) {
-        return await mySql.query(`SELECT * FROM depart_to_loc WHERE location_id=${location_id} AND department_id=${department_id} AND admin_id=${admin_id}`);
+        return await mySql.query(`SELECT * FROM depart_to_loc WHERE location_id=? AND department_id=? AND admin_id=?`, [location_id, department_id, admin_id]);
     }
 
     async addDeptToLoc(location_id, department_id, admin_id) {
         return await mySql.query(`
                 INSERT INTO depart_to_loc (location_id,department_id,admin_id)
-                VALUES (${location_id},${department_id},${admin_id})
-            `);
+                VALUES (?,?,?)
+            `, [location_id, department_id, admin_id]);
     }
 
 }

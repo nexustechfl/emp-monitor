@@ -21,6 +21,7 @@ class RoleModel {
         return mySql.query(query, organization_id);
     }
     getRolesWithPermissions(organization_id, role_id, skip, limit, name, sortOrder) {
+        let params = [organization_id, organization_id];
         let query = `
             SELECT
                 r.id AS id,
@@ -31,20 +32,20 @@ class RoleModel {
                 GROUP_CONCAT(pr.permission_id) as permission_ids,(COUNT( r.id ) OVER()) AS total_count
             FROM roles AS r
             LEFT JOIN permission_role AS pr
-            ON pr.role_id=r.id  AND pr.organization_id=${organization_id}
-            
+            ON pr.role_id=r.id  AND pr.organization_id=?
+
             WHERE
-                (r.organization_id=${organization_id})
+                (r.organization_id=?)
                 AND r.status = 1
                 AND r.name != "Admin"`;
-        if (role_id) query += ` AND r.id=${role_id}`;
-        if (name) query += ` AND (name LIKE '%${name}%')`;
+        if (role_id) { query += ` AND r.id=?`; params.push(role_id); }
+        if (name) { query += ` AND (name LIKE ?)`; params.push(`%${name}%`); }
         query += ` GROUP BY r.id `;
         if (sortOrder) query += ` ORDER BY name ${sortOrder == 'A' ? 'ASC' : 'DESC'} `;
-        query += `LIMIT ${skip}, ${limit}`;
+        query += `LIMIT ?, ?`;
+        params.push(skip, limit);
 
-
-        return mySql.query(query);
+        return mySql.query(query, params);
     }
     getRole(role_id) {
         return mySql.query(`SELECT id, organization_id FROM roles WHERE id=?`, [role_id]);
@@ -53,10 +54,10 @@ class RoleModel {
         const query = `
             SELECT id, name
             FROM roles
-            WHERE name LIKE "${name}%" AND (organization_id=${organization_id} OR organization_id IS NULL);
+            WHERE name LIKE ? AND (organization_id=? OR organization_id IS NULL);
         `;
 
-        return mySql.query(query);
+        return mySql.query(query, [`${name}%`, organization_id]);
     }
     /**
      * @param {Object} dataObj
@@ -67,29 +68,31 @@ class RoleModel {
     updateRole(dataObj) {
         const { name, role_id, organization_id, permission } = dataObj;
 
-        let update = '';
-        if (name) update += `name='${name}'`;
-        if (permission) { update += update ? `, permission='${permission}'` : `permission='${permission}'`; }
+        let updates = [];
+        let params = [];
+        if (name) { updates.push(`name=?`); params.push(name); }
+        if (permission) { updates.push(`permission=?`); params.push(permission); }
 
-        if (!update) {
+        if (updates.length === 0) {
             return Promise.resolve()
         }
         const query = `
             UPDATE roles
-            SET ${update}
-            WHERE id=${role_id} AND organization_id=${organization_id}
+            SET ${updates.join(', ')}
+            WHERE id=? AND organization_id=?
         `;
+        params.push(role_id, organization_id);
 
-        return mySql.query(query);
+        return mySql.query(query, params);
     }
     employeeExistedWithRole(role_id, organization_id) {
         const query = `SELECT e.id,u.first_name,u.last_name,u.a_email
                     FROM employees e
                     INNER JOIN users u ON u.id=e.user_id
                     INNER JOIN user_role ur ON ur.user_id=u.id
-                    WHERE ur.role_id=${role_id} AND e.organization_id=${organization_id}`;
+                    WHERE ur.role_id=? AND e.organization_id=?`;
 
-        return mySql.query(query);
+        return mySql.query(query, [role_id, organization_id]);
     }
 
     deleteRole(role_id, organization_id) {
@@ -97,9 +100,9 @@ class RoleModel {
     }
 
     deleteRoleAssigned(role_id) {
-        const query = `DELETE FROM assigned_employees WHERE role_id=${role_id}`;
+        const query = `DELETE FROM assigned_employees WHERE role_id=?`;
 
-        return mySql.query(query);
+        return mySql.query(query, [role_id]);
     }
 
     // Permission_Role
@@ -137,7 +140,7 @@ class RoleModel {
         const { role_id, organization_id, permission_ids } = dataObj;
 
         if (permission_ids.length === 0) return Promise.resolve();
-        return mySql.query(`DELETE FROM permission_role WHERE role_id=${role_id} AND organization_id=${organization_id} AND permission_id IN (${permission_ids.toString()})`);
+        return mySql.query(`DELETE FROM permission_role WHERE role_id=? AND organization_id=? AND permission_id IN (?)`, [role_id, organization_id, permission_ids]);
     }
     deleteAllRolePermissions(role_id, organization_id) {
         return mySql.query(`DELETE FROM permission_role WHERE role_id=? AND organization_id=?`, [role_id, organization_id]);
@@ -156,10 +159,10 @@ class RoleModel {
         const query = `
             SELECT id, name
             FROM roles
-            WHERE name="${name}" AND organization_id=${organization_id};
+            WHERE name=? AND organization_id=?;
         `;
 
-        return mySql.query(query);
+        return mySql.query(query, [name, organization_id]);
     }
     addAudience({ role_data }) {
         return mySql.query(`
@@ -172,9 +175,9 @@ class RoleModel {
                     FROM roles_location_department rld
                     LEFT JOIN organization_departments od ON rld.department_id=od.id
                     LEFT JOIN organization_locations ol ON rld.location_id=ol.id
-                    WHERE rld.role_id IN(${role_ids});`;
+                    WHERE rld.role_id IN(?);`;
 
-        return mySql.query(query);
+        return mySql.query(query, [role_ids]);
     }
 
     deleteRoleWithLocAndDept({ role_id }) {
@@ -200,10 +203,10 @@ class RoleModel {
         const query = `
             SELECT id, name
             FROM roles
-            WHERE name="${name}" AND organization_id=${organization_id} AND id!=${role_id};
+            WHERE name=? AND organization_id=? AND id!=?;
         `;
 
-        return mySql.query(query);
+        return mySql.query(query, [name, organization_id, role_id]);
     }
 
     listRoleAudienceWithLocation({ role_id, location_id }) {
@@ -211,9 +214,9 @@ class RoleModel {
                     FROM roles_location_department rld
                     LEFT JOIN organization_departments od ON rld.department_id=od.id
                     LEFT JOIN organization_locations ol ON rld.location_id=ol.id
-                    WHERE rld.role_id=${role_id} AND location_id=${location_id};`;
+                    WHERE rld.role_id=? AND location_id=?;`;
 
-        return mySql.query(query);
+        return mySql.query(query, [role_id, location_id]);
     }
 
     getGroupWithDeptAndLoc({ where }) {
@@ -239,7 +242,7 @@ class RoleModel {
     
     deletePermissionRole({ role_id, organization_id, permission_id }) {
 
-        return mySql.query(`DELETE FROM permission_role WHERE role_id=${role_id} AND organization_id=${organization_id} AND permission_id= ${permission_id}`);
+        return mySql.query(`DELETE FROM permission_role WHERE role_id=? AND organization_id=? AND permission_id=?`, [role_id, organization_id, permission_id]);
     }
     
     getAdminIdByRoles (role_id, organization_id) {
@@ -247,10 +250,10 @@ class RoleModel {
             SELECT u.id as user_id, e.id as emp_id
             FROM user_role ur
             JOIN users u ON u.id = ur.user_id
-            JOIN employees e ON u.id = e.user_id AND e.organization_id = ${organization_id}
-            WHERE ur.role_id = ${role_id}
+            JOIN employees e ON u.id = e.user_id AND e.organization_id = ?
+            WHERE ur.role_id = ?
         `;
-        return mySql.query(query);
+        return mySql.query(query, [organization_id, role_id]);
     }
 
     updateAutoAccept (user_id) {
@@ -263,15 +266,15 @@ class RoleModel {
 
 
     getRolesById(role_id) {
-        return mySql.query(`SELECT type, status, permission FROM roles WHERE id = ${role_id}`);
+        return mySql.query(`SELECT type, status, permission FROM roles WHERE id = ?`, [role_id]);
     }
 
     getRolesLocationDepartment (role_id) {
-        return mySql.query(`SELECT location_id, department_id FROM roles_location_department WHERE role_id = ${role_id}`);
+        return mySql.query(`SELECT location_id, department_id FROM roles_location_department WHERE role_id = ?`, [role_id]);
     }
 
     getRolesPermission (role_id) {
-        return mySql.query(`SELECT permission_id FROM permission_role WHERE role_id = ${role_id}`);
+        return mySql.query(`SELECT permission_id FROM permission_role WHERE role_id = ?`, [role_id]);
     }
     
 }
@@ -315,7 +318,7 @@ const _ = require('underscore');
 (async () => {
     const organizations = await mySql.query(`SELECT o.id as organization_id,u.id as user_id FROM organizations o INNER JOIN users u ON u.id=o.user_id where o.id=1 LIMIT 1`);
     for (const { organization_id, user_id } of organizations) {
-        const roles = await mySql.query(`SELECT id as role_id,name,type FROM roles WHERE organization_id=${organization_id} AND name IN('Employee','Manager','Team Lead')`);
+        const roles = await mySql.query(`SELECT id as role_id,name,type FROM roles WHERE organization_id=? AND name IN('Employee','Manager','Team Lead')`, [organization_id]);
         for (const { role_id, name, type } of roles) {
             if (name == 'Employee') {
                 const permission_ids = [56, 57, 58, 59, 60, 61];
@@ -335,7 +338,7 @@ const _ = require('underscore');
 async function updateRolesPermision(organization_id, role_id, permission_ids, user_id) {
     console.log('----', organization_id, role_id);
     const permission = JSON.stringify({ "read": 1, "write": 0, "delete": 0 });
-    const update = await mySql.query(`UPDATE roles SET permission = '${permission}' WHERE id=${role_id} AND organization_id=${organization_id}`);
+    const update = await mySql.query(`UPDATE roles SET permission = ? WHERE id=? AND organization_id=?`, [permission, role_id, organization_id]);
 
     const permissionRoles = await mySql.query(`SELECT id, permission_id FROM permission_role WHERE role_id=? AND organization_id=?`, [role_id, organization_id]);
     const permissionRoleIds = _.pluck(permissionRoles, 'permission_id');
@@ -345,7 +348,7 @@ async function updateRolesPermision(organization_id, role_id, permission_ids, us
 
     const values = toBeInsertedPermissions.map(permission_id => [role_id, permission_id, organization_id, user_id]);
     if (toBeDeletedPermissions.length > 0) {
-        await mySql.query(`DELETE FROM permission_role WHERE role_id=${role_id} AND organization_id=${organization_id} AND permission_id IN (${toBeDeletedPermissions.toString()})`);
+        await mySql.query(`DELETE FROM permission_role WHERE role_id=? AND organization_id=? AND permission_id IN (?)`, [role_id, organization_id, toBeDeletedPermissions]);
     }
     if (values.length > 0) {
         await mySql.query(`INSERT INTO permission_role (role_id, permission_id, organization_id, created_by) VALUES ?`, [values]);
