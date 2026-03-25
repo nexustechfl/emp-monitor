@@ -11,6 +11,8 @@ const _ = require('underscore');
 const event = require('./event.service');
 const actionsTracker = require('../../services/actionsTracker');
 const Comman = require('../../../../utils/helpers/Common');
+const jwt = require('jsonwebtoken');
+const mysql2 = require('mysql2/promise');
 const activityLogsSchema = require('./activitylogs.schema');
 const crypto = require('crypto');
 const { Mailer } = require('../../../../messages/Mailer');
@@ -891,6 +893,203 @@ class AuthService {
     }
   }
 
+  /**
+   * SSO Login — called by SSOGate on the frontend.
+   * Receives an EmpCloud JWT, decodes it, looks up (or auto-provisions) the
+   * user in emp-monitor's DB, generates an emp-monitor token, and returns the
+   * response in the format SSOGate expects.
+   */
+  async ssoLogin(req, res, next) {
+    try {
+      const { token } = req.body;
+      if (!token) {
+        return res.status(400).json({ code: 400, error: 'Bad Request', message: 'SSO token is required', data: null });
+      }
+
+      // 1. Decode the EmpCloud RS256 JWT (trusted redirect — no verification needed)
+      const decoded = jwt.decode(token);
+      if (!decoded || !decoded.sub || !decoded.email) {
+        return res.status(400).json({ code: 400, error: 'Bad Request', message: 'Invalid SSO token', data: null });
+      }
+
+      const { sub: cloudUserId, org_id, email, first_name, last_name, role: cloudRole } = decoded;
+
+      // 2. Validate the user exists in the empcloud database
+      const empcloudConn = await getEmpCloudConnection();
+      try {
+        const [rows] = await empcloudConn.execute(
+          'SELECT id, email, first_name, last_name FROM users WHERE id = ? AND email = ? LIMIT 1',
+          [cloudUserId, email]
+        );
+        if (!rows || rows.length === 0) {
+          return res.status(403).json({ code: 403, error: 'Forbidden', message: 'User not found in EmpCloud. SSO denied.', data: null });
+        }
+      } finally {
+        await empcloudConn.end();
+      }
+
+      // 3. Look up the user in emp-monitor's MySQL by email
+      let userData;
+      const [existingUser] = await authModel.userWithAdminAndRole(email);
+
+      if (existingUser) {
+        userData = existingUser;
+      } else {
+        // Also try to find as admin
+        const [adminData] = await authModel.getAdmin(email, '');
+        if (adminData) {
+          // Admin user — build response directly
+          const adminJsonData = {
+            organization_id: adminData.organization_id,
+            user_id: adminData.id,
+            first_name: first_name || adminData.first_name,
+            last_name: last_name || adminData.last_name,
+            email: email,
+            is_manager: false,
+            is_teamlead: false,
+            is_employee: false,
+            is_admin: true,
+          };
+
+          const payload = { user_id: adminJsonData.user_id };
+          await redis.setAsync(
+            adminJsonData.user_id,
+            JSON.stringify({ ...adminJsonData, permissionData: Array.from(Array(25).keys()).map(item => item + 1) }),
+            'EX',
+            Comman.getTime(process.env.JWT_EXPIRY)
+          );
+
+          const accessToken = await jwtService.generateAccessToken(payload);
+
+          return res.status(200).json({
+            code: 200,
+            data: accessToken,
+            user_name: first_name || adminData.first_name,
+            full_name: (first_name || adminData.first_name) + ' ' + (last_name || adminData.last_name),
+            email: email,
+            user_id: adminData.id,
+            u_id: adminData.id,
+            organization_id: adminData.organization_id,
+            is_admin: true,
+            is_manager: false,
+            is_teamlead: false,
+            is_employee: false,
+            role: 'Admin',
+            role_id: null,
+            photo_path: '',
+            message: 'SSO Authentication Successful',
+            error: null,
+          });
+        }
+
+        // User not found anywhere in emp-monitor — deny access
+        return res.status(403).json({ code: 403, error: 'Forbidden', message: 'No EmpMonitor account found for this email. Please contact your administrator.', data: null });
+      }
+
+      // 4. User found as employee/manager/teamlead — build response like userAuth does
+      if (userData.status == 2) {
+        return res.status(400).json({ code: 400, error: 'Not Found', message: 'User suspended by admin', data: null });
+      }
+
+      let is_manager = false, is_teamlead = false, is_employee = false;
+      if (userData.role && userData.role.toLowerCase() === 'manager') is_manager = true;
+      else if (userData.role && userData.role.toLowerCase() === 'employee') is_employee = true;
+      else if (userData.role && userData.role.toLowerCase() === 'team lead') is_teamlead = true;
+      else if (userData.role && userData.role.toLowerCase()) is_manager = true;
+
+      const userRoles = await authModel.roles(userData.id);
+      let permissionData = await authModel.userPermission(userData.role_id, userData.organization_id);
+      let permission_ids = [];
+      if (permissionData.length > 0) {
+        permission_ids = _.pluck(permissionData, 'permission_id');
+      }
+
+      let setting = JSON.parse(userData.custom_tracking_rule);
+      const shift = userData.shift ? JSON.parse(userData.shift) : '';
+      const productive_setting = userData.productive_hours ? JSON.parse(userData.productive_hours) : null;
+      const productive_hours = productive_setting ? (productive_setting.mode == 'unlimited' ? 28800 : Comman.hourToSeconds(productive_setting.hour)) : 28800;
+
+      const adminJsonData = {
+        user_id: userData.id,
+        employee_id: userData.employee_id,
+        organization_id: userData.organization_id,
+        first_name: userData.first_name,
+        last_name: userData.last_name,
+        email: userData.email,
+        a_email: userData.a_email,
+        email_verified_at: userData.email_verified_at,
+        contact_number: userData.contact_number,
+        emp_code: userData.emp_code,
+        location_id: userData.location_id,
+        location_name: userData.location,
+        department_id: userData.department_id,
+        department_name: userData.department,
+        photo_path: userData.photo_path,
+        address: userData.address,
+        role_id: userData.role_id,
+        role: userData.role,
+        status: userData.status,
+        timezone: userData.timezone,
+        is_manager,
+        is_teamlead,
+        is_employee,
+        is_admin: false,
+        weekday_start: userData.weekday_start,
+        language: userData.language,
+        productive_hours,
+        productivity_data: productive_setting,
+        productivityCategory: userData.productivityCategory,
+        permissionData,
+      };
+
+      // 5. Generate emp-monitor JWT token
+      const payload = { user_id: adminJsonData.user_id };
+
+      // 6. Cache user data in Redis (same pattern as regular login)
+      await redis.setAsync(
+        adminJsonData.user_id,
+        JSON.stringify({ ...adminJsonData, permission_ids, setting, shift }),
+        'EX',
+        Comman.getTime(process.env.JWT_EXPIRY)
+      );
+
+      const accessToken = await jwtService.generateAccessToken(payload);
+      const feature = await authModel.dashboardFeature();
+
+      // 7. Return data in the format SSOGate expects
+      return res.status(200).json({
+        code: 200,
+        data: accessToken,
+        user_name: userData.first_name,
+        full_name: userData.first_name + ' ' + userData.last_name,
+        email: userData.a_email,
+        user_id: userData.employee_id,
+        u_id: userData.id,
+        organization_id: userData.organization_id,
+        is_admin: false,
+        is_manager: adminJsonData.is_manager,
+        is_teamlead: adminJsonData.is_teamlead,
+        is_employee: adminJsonData.is_employee,
+        role: userData.role,
+        role_id: userData.role_id,
+        photo_path: userData.photo_path || '',
+        permissionData,
+        feature,
+        roles: userRoles,
+        total_allowed_user_count: userData.total_allowed_user_count,
+        location_id: userData.location_id,
+        department_id: userData.department_id,
+        weekday_start: userData.weekday_start,
+        language: userData.language,
+        message: 'SSO Authentication Successful',
+        error: null,
+      });
+    } catch (error) {
+      console.log('SSO Login error ---', error);
+      return res.status(400).json({ code: 400, error: 'SSO Error', message: error.message, data: null });
+    }
+  }
+
 }
 
 async function clearEmailFromRedis(email) {
@@ -902,6 +1101,20 @@ async function clearEmailFromRedis(email) {
 }
 
 module.exports = new AuthService();
+
+/**
+ * Creates a one-off connection to the empcloud database for SSO user validation.
+ * The connection should be closed by the caller after use.
+ */
+async function getEmpCloudConnection() {
+  return mysql2.createConnection({
+    host: process.env.EMPCLOUD_DB_HOST || 'localhost',
+    port: parseInt(process.env.EMPCLOUD_DB_PORT || '3306', 10),
+    user: process.env.EMPCLOUD_DB_USER || 'empcloud',
+    password: process.env.EMPCLOUD_DB_PASSWORD || 'EmpCloud2026',
+    database: process.env.EMPCLOUD_DB_NAME || 'empcloud',
+  });
+}
 
 function generateOTP() {  
   // Generate a random 4-byte buffer  

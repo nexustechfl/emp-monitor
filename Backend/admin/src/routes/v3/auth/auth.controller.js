@@ -56,6 +56,10 @@ class AuthController {
     async amemberLogout(req, res, next) {
         return await authService.amemberLogout(req, res, next);
     }
+
+    async ssoAuth(req, res, next) {
+        return await authService.ssoLogin(req, res, next);
+    }
 }
 
 module.exports = new AuthController;
