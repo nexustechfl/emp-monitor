@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { extractSSOToken, useAuthStore } from '../lib/auth-store';
+import { setSessionCookie } from '../lib/sessionCookie';
 
 /**
  * SSOGate wraps the entire app.
@@ -23,7 +24,13 @@ export default function SSOGate({ children }) {
   const navigate = useNavigate();
 
   // Extract once on mount — never re-run (token already stripped from URL)
-  const [ssoToken] = useState(() => extractSSOToken());
+  const [ssoToken] = useState(() => {
+    // Prevent re-processing on remount/navigation
+    if (sessionStorage.getItem('sso_processed')) return null;
+    const token = extractSSOToken();
+    if (token) sessionStorage.setItem('sso_processed', '1');
+    return token;
+  });
   const [ready, setReady] = useState(!ssoToken); // if no SSO token, render immediately
   const [error, setError] = useState(null);
 
@@ -54,28 +61,40 @@ export default function SSOGate({ children }) {
           photo_path,
         } = res.data;
 
-        login(
-          {
-            user_name,
-            full_name,
-            email,
-            user_id,
-            u_id,
-            organization_id,
-            is_admin,
-            is_manager,
-            is_teamlead,
-            is_employee,
-            role,
-            role_id,
-            photo_path,
-          },
-          accessToken
-        );
+        const userData = {
+          user_name,
+          full_name,
+          email,
+          user_id,
+          u_id,
+          organization_id,
+          is_admin,
+          is_manager,
+          is_teamlead,
+          is_employee,
+          role,
+          role_id,
+          photo_path,
+        };
+
+        // Store in Zustand auth store
+        login(userData, accessToken);
+
+        // Also store in session cookie format (used by protected route guards)
+        setSessionCookie({
+          ...userData,
+          data: accessToken,
+          code: 200,
+        });
+
+        // Also set the bare token (used by some API interceptors)
+        localStorage.setItem('token', accessToken);
 
         // Navigate based on role
-        const isAdmin = res.data.is_admin;
-        navigate(isAdmin ? '/admin/dashboard' : '/non-admin/dashboard', { replace: true });
+        const dest = is_admin ? '/admin/dashboard'
+          : is_employee ? '/employee/dashboard'
+          : '/non-admin/dashboard';
+        navigate(dest, { replace: true });
       } catch (err) {
         if (cancelled) return;
         console.error('SSO login failed:', err);
