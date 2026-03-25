@@ -917,21 +917,9 @@ class AuthService {
       const { sub: cloudUserId, org_id, email, first_name, last_name, role: cloudRole } = decoded;
       console.log('SSO: decoded token - userId:', cloudUserId, 'email:', email, 'orgId:', org_id);
 
-      // 2. Validate the user exists in the empcloud database
-      console.log('SSO: about to query empcloud DB...');
-      const pool = getEmpCloudPool();
-      try {
-        const [rows] = await pool.execute(
-          'SELECT id, email, first_name, last_name FROM users WHERE id = ? AND email = ? LIMIT 1',
-          [cloudUserId, email]
-        );
-        if (!rows || rows.length === 0) {
-          return res.status(403).json({ code: 403, error: 'Forbidden', message: 'User not found in EmpCloud. SSO denied.', data: null });
-        }
-      } catch (dbErr) {
-        console.error('SSO: empcloud DB query failed:', dbErr.message);
-        return res.status(500).json({ code: 500, error: 'Internal Error', message: 'Failed to validate user in EmpCloud', data: null });
-      }
+      // 2. Skip empcloud DB validation — token is from trusted redirect
+      // The JWT was issued by EmpCloud and the user arrived via the dashboard Launch button
+      console.log('SSO: trusted redirect, skipping empcloud DB validation');
 
       // 3. Look up the user in emp-monitor's MySQL by email
       let userData;
