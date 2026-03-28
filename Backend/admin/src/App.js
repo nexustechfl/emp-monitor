@@ -169,6 +169,10 @@ class App {
             }
         })
 
+        app.get('/health', (req, res) => {
+            res.json({ status: 'ok', service: 'emp-monitor', version: '1.0.0', timestamp: new Date().toISOString() });
+        });
+
         if(!process.env.IS_ON_PREM) app.get('/', (req, res) => { res.send('success'); });
         else app.get('/', (req, res) => { res.redirect('/api/v3/explorer'); });
 
