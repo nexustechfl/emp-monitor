@@ -125,7 +125,7 @@ class App {
         // }));
         // CORS
         app.use(function (req, res, next) {
-            const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:5174').split(',');
+            const allowedOrigins = (process.env.ALLOWED_ORIGINS || process.env.CORS_ORIGIN || 'http://localhost:5174').split(',');
             const origin = req.headers.origin;
             if (origin && allowedOrigins.includes(origin)) {
                 res.setHeader('Access-Control-Allow-Origin', origin);
