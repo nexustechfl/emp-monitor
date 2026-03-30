@@ -3,6 +3,10 @@ const SockJS = require('sockjs-client');
 let client, transport;
 transport = {
     async start(serverUrl) {
+        if (!serverUrl) {
+            console.warn('WEB_SOCKET_SERVER_URL is not set — websocket notifications disabled');
+            return;
+        }
         client = new SockJS(serverUrl);
 
         client.onopen = () => {
@@ -20,6 +24,7 @@ transport = {
     },
 
     async send(message, userId) {
+       if (!client) return;
        await client.send(JSON.stringify(message));
     }
 }

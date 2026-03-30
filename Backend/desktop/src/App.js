@@ -145,8 +145,8 @@ class App {
                 host: process.env.REDIS_HOST,
                 password: process.env.REDIS_PASSWORD
             });
-            const redisStore = require('connect-redis')(session);
-            sessionObj['store'] = new redisStore({ client: redisClient });
+            const { RedisStore } = require('connect-redis');
+            sessionObj['store'] = new RedisStore({ client: redisClient });
         }
         // app.use(session(sessionObj));
 
