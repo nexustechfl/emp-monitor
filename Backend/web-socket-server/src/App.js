@@ -1,5 +1,6 @@
 const http = require('http');
-const nodeStatic = require('node-static');
+const serveStatic = require('serve-static');
+const finalhandler = require('finalhandler');
 const {Notifications} = require('./prefixes/Notifications');
 
 class App {
@@ -9,14 +10,13 @@ class App {
     }
 
     startServer() {
+        const serve = serveStatic(`${__dirname}/../public`);
         this.server = http.createServer((req, res) => {
             if(req.url === '/api/custom/on-premise-socket') {
                 res.end(JSON.stringify({code: 200,  message: "Success"}));
+                return;
             }
-        });
-        const staticDirectory = new nodeStatic.Server(`${__dirname}/../public`);
-        this.server.addListener('request', (req, res) => {
-            staticDirectory.serve(req, res);
+            serve(req, res, finalhandler(req, res));
         });
         this.server.addListener('upgrade', (req, res) => {
             res.end();

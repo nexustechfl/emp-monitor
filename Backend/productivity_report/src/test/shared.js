@@ -1,5 +1,5 @@
 const expect = require('chai').expect;
-const request = require('request');
+const axios = require('axios');
 
 const User = require('../routes/shared/User');
 const Storage = require('../routes/shared/Storage')

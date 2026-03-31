@@ -1,6 +1,6 @@
 const _ = require('underscore');
 const UrlModel = require('./UrlClassifiactin.model');
-const request = require('request');
+const axios = require('axios');
 
 let api_path = process.env.UPDATE_URL_PREDICTION_LINK_LOCAL;
 let model_path = process.env.PYTHON_URL_MODEL_LINK_LOCAL;
@@ -44,18 +44,9 @@ eventEmitter.on('url_classification', async activityUrl => {
                 // })
                 // console.log(non_update, '---------------------')
                 let postData = { data: non_update, api_path: api_path };
-                var clientServerOptions = {
-                    uri: model_path,
-                    body: JSON.stringify(postData),
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                }
-                request(clientServerOptions, function (error, response) {
-                    // console.log(error, response);
-                    return null;
-                });
+                axios.post(model_path, postData, {
+                    headers: { 'Content-Type': 'application/json' }
+                }).catch(() => null);
             }
         }
     } catch (err) {

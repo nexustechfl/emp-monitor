@@ -1,7 +1,7 @@
 const _ = require('underscore');
 const moment = require('moment');
 const momentTz = require('moment-timezone');
-const request = require('request');
+const axios = require('axios');
 
 
 const PrService = require('./Productivity.model');
@@ -399,19 +399,12 @@ class PrController {
         if (data.length > 0) {
             return sendResponse(res, 400, null, reportMessage.find(x => x.id === "13")[language] || reportMessage.find(x => x.id === "13")["en"], reportMessage.find(x => x.id === "13")[language] || reportMessage.find(x => x.id === "13")["en"]);
         }
-        const options = {
-            url: process.env.ANOMALY_DETECTION_URL,
-            json: true,
-            body: {
-                data
-            }
-        };
-        await request.post(options, (err, res, body) => {
-            if (err) {
-                return sendResponse(res, 400, null, reportMessage.find(x => x.id === "15")[language] || reportMessage.find(x => x.id === "15")["en"], reportMessage.find(x => x.id === "15")[language] || reportMessage.find(x => x.id === "15")["en"]);
-            }
-            return sendResponse(res, 200, body, reportMessage.find(x => x.id === "17")[language] || reportMessage.find(x => x.id === "17")["en"], null);
-        });
+        try {
+            const response = await axios.post(process.env.ANOMALY_DETECTION_URL, { data });
+            return sendResponse(res, 200, response.data, reportMessage.find(x => x.id === "17")[language] || reportMessage.find(x => x.id === "17")["en"], null);
+        } catch (err) {
+            return sendResponse(res, 400, null, reportMessage.find(x => x.id === "15")[language] || reportMessage.find(x => x.id === "15")["en"], reportMessage.find(x => x.id === "15")[language] || reportMessage.find(x => x.id === "15")["en"]);
+        }
     }
 
     async getProductivityNew(req, res, next) {

@@ -1,6 +1,6 @@
 const Trello = require("trello");
 const moment = require('moment');
-const request = require("request");
+const axios = require("axios");
 
 const TrelloModel = require('./Trello.model');
 const Helper = require('./Trello.helper');
@@ -29,7 +29,7 @@ class TrelloControllers {
         this.secret = process.env.TRELLO_OAUTH_SECRET;
     }
 
-    getOrgs(req, res) {
+    async getOrgs(req, res) {
         const { access_token, member_id } = res.integrationData;
         const options = {
             method: 'GET',
@@ -37,20 +37,13 @@ class TrelloControllers {
             qs: { key: this.key, token: access_token }
         };
 
-        request(options, function (err, response, body) {
-            if (err) {
-                console.error(err)
-                return res.status(500).json({ success: false, error: err.response.rawEncoded });
-            }
-
-            try {
-                const data = JSON.parse(body);
-                return res.json({ success: true, data })
-            } catch (error) {
-                console.error(err)
-                return res.status(500).json({ success: false, error: err });
-            }
-        });
+        try {
+            const response = await axios({ method: options.method, url: options.url, params: options.qs });
+            return res.json({ success: true, data: response.data });
+        } catch (err) {
+            console.error(err);
+            return res.status(500).json({ success: false, error: err.message });
+        }
     }
 
     getBoards(req, res) {

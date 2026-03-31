@@ -1,5 +1,5 @@
 const moment = require('moment');
-const request = require("request");
+const axios = require("axios");
 
 const orgService = require('../../shared/integrations/Organization');
 const ProjectService = require('../../shared/integrations/Project');
@@ -10,103 +10,39 @@ const CheckItemService = require('../../shared/integrations/CheckItem');
 
 class TrelloHelper {
 
-    getOrgs(key, access_token, member_id) {
-        const options = {
-            method: 'GET',
-            url: `https://api.trello.com/1/members/${member_id}/organizations`,
-            qs: { key: key, token: access_token }
-        };
-
-        return new Promise((resolve, reject) => {
-            request(options, function (err, response, body) {
-                if (err) {
-                    reject(err);
-                }
-
-                try {
-                    const data = JSON.parse(body);
-                    resolve(data);
-                } catch (err) {
-                    reject(err);
-                }
-            });
-        })
+    async getOrgs(key, access_token, member_id) {
+        const response = await axios.get(`https://api.trello.com/1/members/${member_id}/organizations`, {
+            params: { key, token: access_token }
+        });
+        return response.data;
     }
 
-    getOrg(key, access_token, orgId) {
-        const options = {
-            method: 'GET',
-            url: `https://api.trello.com/1/organizations/${orgId}`,
-            qs: { key: key, token: access_token }
-        };
-
-        return new Promise((resolve, reject) => {
-            request(options, function (err, response, body) {
-                if (err) {
-                    reject(err);
-                }
-
-                try {
-                    const data = JSON.parse(body);
-                    resolve(data);
-                } catch (err) {
-                    reject(err);
-                }
-            });
-        })
+    async getOrg(key, access_token, orgId) {
+        const response = await axios.get(`https://api.trello.com/1/organizations/${orgId}`, {
+            params: { key, token: access_token }
+        });
+        return response.data;
     }
 
-    getBoard(key, access_token, boardId) {
-        const options = {
-            method: 'GET',
-            url: `https://api.trello.com/1/boards/${boardId}`,
-            qs: { key: key, token: access_token }
-        };
-
-        return new Promise((resolve, reject) => {
-            request(options, function (err, response, body) {
-                if (err) {
-                    reject(err);
-                }
-
-                try {
-                    const data = JSON.parse(body);
-                    resolve(data);
-                } catch (err) {
-                    reject(err);
-                }
-            });
-        })
+    async getBoard(key, access_token, boardId) {
+        const response = await axios.get(`https://api.trello.com/1/boards/${boardId}`, {
+            params: { key, token: access_token }
+        });
+        return response.data;
     }
 
-    getListsOnBoard(key, access_token, boardId) {
-        const options = {
-            method: 'GET',
-            url: `https://api.trello.com/1/boards/${boardId}/lists`,
-            qs: {
+    async getListsOnBoard(key, access_token, boardId) {
+        const response = await axios.get(`https://api.trello.com/1/boards/${boardId}/lists`, {
+            params: {
                 cards: 'all',
                 card_fields: 'all',
                 filter: 'open',
                 fields: 'all',
-                key: key,
+                key,
                 token: access_token
             }
-        };
-
-        return new Promise((resolve, reject) => {
-            request(options, function (err, response, body) {
-                if (err) {
-                    reject(err);
-                }
-
-                try {
-                    const data = JSON.parse(body);
-                    resolve(data);
-                } catch (err) {
-                    reject(err);
-                }
-            });
-        })
+        });
+        return response.data;
     }
 
     getDbOrg(creds, idOrganization) {
