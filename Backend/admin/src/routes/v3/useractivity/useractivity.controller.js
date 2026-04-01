@@ -436,7 +436,7 @@ class UserActivity {
         let role_ids = req.body.role_id ? req.body.role_id.split(',') : [];
         let emp_code = req.body.emp_code || user_details[0].emp_code;
         let department_id = req.body.department_id || user_details[0].department_id;
-        let joinDate = req.body.joinDate ? `'${moment(req.body.joinDate, 'MM/DD/YYYY').format('YYYY-MM-DD')}'` : user_details[0].date_join ? `'${moment(user_details[0].date_join).format('YYYY-MM-DD')}'` : null;
+        let joinDate = req.body.joinDate ? moment(req.body.joinDate, 'MM/DD/YYYY').format('YYYY-MM-DD') : user_details[0].date_join ? moment(user_details[0].date_join).format('YYYY-MM-DD') : null;
         let status = req.body.status || user_details[0].status;
         let photo_path = user_details[0].photo_path;
         const timezone = req.body.timezone || user_details[0].timezone;
