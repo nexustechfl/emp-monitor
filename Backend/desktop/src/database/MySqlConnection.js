@@ -37,6 +37,11 @@ class MySqlSingelton {
                 charset: 'utf8mb4'
             });
         }
+
+        // Disable ONLY_FULL_GROUP_BY to maintain MariaDB-compatible GROUP BY behavior
+        this.mySqlPool.on('connection', function (connection) {
+            connection.query("SET SESSION sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''))");
+        });
     }
 
     static getInstance() {

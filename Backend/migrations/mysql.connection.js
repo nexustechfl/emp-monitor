@@ -31,6 +31,11 @@ class MySqlSingelton {
         };
         if (ifDatabase) poolObj.database = process.env.MYSQL_DATABASE_NAME;
         this.mySqlPool = mysql.createPool(poolObj);
+
+        // Disable ONLY_FULL_GROUP_BY to maintain MariaDB-compatible GROUP BY behavior
+        this.mySqlPool.on('connection', function (connection) {
+            connection.query("SET SESSION sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''))");
+        });
     }
 
     static get getInstance() {

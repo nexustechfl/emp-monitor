@@ -14,14 +14,23 @@ export const sequelizeDbProviders = {
             dialect: 'mysql',
             host: process.env.MYSQL_HOST,
             pool: { max: 10, min: 1, acquire: 30000, idle: 10000 },
-            dialectOptions: { typeCast: true },
+            dialectOptions: {
+                typeCast: true,
+                // Disable ONLY_FULL_GROUP_BY to maintain MariaDB-compatible GROUP BY behavior
+                multipleStatements: true
+            },
             port: 3306,
             username: process.env.MYSQL_USERNAME,
             password: process.env.MYSQL_PASSWORD,
             database: process.env.MYSQL_DATABASE,
             timezone: process.env.TIMEZONE_SEQUELIZE,
-            logging: false
+            logging: false,
             // query: { raw: true }
+            hooks: {
+                afterConnect: async (connection: any) => {
+                    await connection.query("SET SESSION sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''))");
+                }
+            }
         });
         sequelize.addModels([
             EmployeeTimesheetEntity,
