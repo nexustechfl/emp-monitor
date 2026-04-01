@@ -46,12 +46,12 @@ function offsetToSeconds(offset) {
   return String(sign * (parseInt(m[2], 10) * 3600 + parseInt(m[3], 10) * 60));
 }
 
-/** Send date as epoch ms — Joi.date() accepts this cleanly and moment() parses it correctly */
+/** "YYYY-MM-DD" → "MM/DD/YYYY" — backend moment() expects this exact format */
 function formatDateJoin(dateStr) {
   if (!dateStr) return "";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return dateStr;
-  return d.getTime();
+  const [y, mo, d] = dateStr.split("-");
+  if (!y || !mo || !d) return dateStr;
+  return `${mo}/${d}/${y}`;
 }
 
 /**
