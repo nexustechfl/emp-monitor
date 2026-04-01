@@ -1307,31 +1307,57 @@ class AuthService {
           return res.status(500).json({ code: 500, error: 'Provisioning Error', message: 'Organization setup incomplete — missing department or location', data: null });
         }
 
-        // Insert user
-        const userResult = await mySql.query(
-          'INSERT INTO users (first_name, last_name, email, a_email, date_join, status) VALUES (?, ?, ?, ?, ?, 1)',
-          [first_name || 'User', last_name || '', email, email, moment().format('YYYY-MM-DD')]
-        );
-        const newUserId = userResult.insertId;
-        console.log('SSO: created user, id:', newUserId);
+        // Insert user (or find existing one if already provisioned)
+        let newUserId;
+        try {
+          const userResult = await mySql.query(
+            'INSERT INTO users (first_name, last_name, email, a_email, date_join, status) VALUES (?, ?, ?, ?, ?, 1)',
+            [first_name || 'User', last_name || '', email, email, moment().format('YYYY-MM-DD')]
+          );
+          newUserId = userResult.insertId;
+          console.log('SSO: created user, id:', newUserId);
+        } catch (insertErr) {
+          if (insertErr.code === 'ER_DUP_ENTRY' || (insertErr.message && insertErr.message.includes('Duplicate entry'))) {
+            // User row exists but employee/role join failed earlier — find existing user
+            const [existingUser] = await mySql.query('SELECT id FROM users WHERE email = ? LIMIT 1', [email]);
+            if (!existingUser) {
+              return res.status(500).json({ code: 500, error: 'Provisioning Error', message: 'Duplicate user but lookup failed', data: null });
+            }
+            newUserId = existingUser.id;
+            console.log('SSO: user already exists, reusing id:', newUserId);
+          } else {
+            throw insertErr;
+          }
+        }
 
         // Get default shift
         const [defaultShift] = await mySql.query('SELECT id FROM organization_shifts WHERE organization_id = ? LIMIT 1', [monitorOrgId]).catch(() => [null]);
 
-        // Insert employee
-        const empResult = await mySql.query(
-          'INSERT INTO employees (user_id, organization_id, department_id, location_id, timezone, shift_id, custom_tracking_rule) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [newUserId, monitorOrgId, deptId, locId, timezone, defaultShift ? defaultShift.id : null, JSON.stringify(ssoSettings)]
-        );
-        const newEmpId = empResult.insertId;
-        console.log('SSO: created employee, id:', newEmpId);
+        // Insert employee (skip if already exists for this user)
+        let newEmpId;
+        const [existingEmp] = await mySql.query('SELECT id FROM employees WHERE user_id = ? LIMIT 1', [newUserId]).catch(() => [null]);
+        if (existingEmp) {
+          newEmpId = existingEmp.id;
+          console.log('SSO: employee already exists, reusing id:', newEmpId);
+        } else {
+          const empResult = await mySql.query(
+            'INSERT INTO employees (user_id, organization_id, department_id, location_id, timezone, shift_id, custom_tracking_rule) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [newUserId, monitorOrgId, deptId, locId, timezone, defaultShift ? defaultShift.id : null, JSON.stringify(ssoSettings)]
+          );
+          newEmpId = empResult.insertId;
+          console.log('SSO: created employee, id:', newEmpId);
+        }
 
-        // Insert user_role mapping
-        await mySql.query('INSERT INTO user_role (user_id, role_id) VALUES (?, ?)', [newUserId, roleId]);
-        console.log('SSO: created role mapping, roleId:', roleId);
-
-        // Update org user count
-        await mySql.query('UPDATE organizations SET current_user_count = current_user_count + 1 WHERE id = ?', [monitorOrgId]);
+        // Insert user_role mapping (skip if already exists)
+        const [existingRole] = await mySql.query('SELECT id FROM user_role WHERE user_id = ? LIMIT 1', [newUserId]).catch(() => [null]);
+        if (!existingRole) {
+          await mySql.query('INSERT INTO user_role (user_id, role_id) VALUES (?, ?)', [newUserId, roleId]);
+          console.log('SSO: created role mapping, roleId:', roleId);
+          // Update org user count only for truly new employees
+          await mySql.query('UPDATE organizations SET current_user_count = current_user_count + 1 WHERE id = ?', [monitorOrgId]);
+        } else {
+          console.log('SSO: role mapping already exists for user:', newUserId);
+        }
 
         // Sync updated user count back to empcloud used_seats
         try {
