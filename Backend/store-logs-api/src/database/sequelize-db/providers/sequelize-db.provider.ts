@@ -28,7 +28,7 @@ export const sequelizeDbProviders = {
             // query: { raw: true }
             hooks: {
                 afterConnect: async (connection: any) => {
-                    await connection.query("SET SESSION sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''))");
+                    await connection.promise().query("SET SESSION sql_mode=(SELECT REPLACE(@@sql_mode,'ONLY_FULL_GROUP_BY',''))");
                 }
             }
         });
