@@ -1341,8 +1341,8 @@ class AuthService {
           console.log('SSO: employee already exists, reusing id:', newEmpId);
         } else {
           const empResult = await mySql.query(
-            'INSERT INTO employees (user_id, organization_id, department_id, location_id, timezone, shift_id, custom_tracking_rule) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [newUserId, monitorOrgId, deptId, locId, timezone, defaultShift ? defaultShift.id : null, JSON.stringify(ssoSettings)]
+            'INSERT INTO employees (user_id, organization_id, department_id, location_id, timezone, shift_id, custom_tracking_rule, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [newUserId, monitorOrgId, deptId, locId, timezone, defaultShift ? defaultShift.id : null, JSON.stringify(ssoSettings), newUserId]
           );
           newEmpId = empResult.insertId;
           console.log('SSO: created employee, id:', newEmpId);
