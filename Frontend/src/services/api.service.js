@@ -33,7 +33,6 @@ apiInstance.interceptors.request.use((config) => {
         // Unique URL so XHR does not reuse a cached 200 (headers alone are not always enough).
         config.params = {
             ...(config.params && typeof config.params === 'object' ? config.params : {}),
-            _nc: Date.now(),
         };
         return config;
     }

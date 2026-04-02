@@ -46,7 +46,7 @@ function offsetToSeconds(offset) {
   return String(sign * (parseInt(m[2], 10) * 3600 + parseInt(m[3], 10) * 60));
 }
 
-/** "YYYY-MM-DD" → "MM/DD/YYYY", matching PHP's date_join format */
+/** "YYYY-MM-DD" → "MM/DD/YYYY" — backend moment() expects this exact format */
 function formatDateJoin(dateStr) {
   if (!dateStr) return "";
   const [y, mo, d] = dateStr.split("-");
@@ -148,6 +148,7 @@ export function useEmployeeForm(locations = []) {
       timezone:        tzName,
       timezone_offset: offsetToSeconds(tzOffset),
       date_join:       formatDateJoin(form.dateOfJoining),
+      joinDate:        formatDateJoin(form.dateOfJoining),
       shift_id:        form.shift || "0",
       address:         form.address,
       status:          "1",
