@@ -16,7 +16,8 @@ import { OnedriveUtils } from '../utils/one-drive.utils';
 import { SFtpUtils } from '../utils/SFTP.utils';
 import { DropboxUtils } from '../utils/dropbox.utils';
 import { WebDavUtils } from '../utils/WebDav.utils';
-import { RedisService } from 'nestjs-redis';
+import { InjectRedis } from '@liaoliaots/nestjs-redis';
+import Redis from 'ioredis';
 import { Logger } from '../../../../common/errlogger/logger';
 import ConfigFile from '../../../../../../config/config.js';
 
@@ -84,7 +85,7 @@ export class ScreenshotService {
     constructor(
         private readonly responseHelperService: ResponseHelperService,
         private readonly integrationModel: IntegrationModel,
-        private readonly redisService: RedisService,
+        @InjectRedis() private readonly redis: Redis,
     ) {
         this.providers = new Map();
 
@@ -150,7 +151,7 @@ export class ScreenshotService {
             try {
                 if (providerCode === "GD" && process?.env?.UPDATE_IN_SCREENSHOT_OFFICE_USER?.split(",").includes(String(userDetails.organization_id)) && userDetails.system_type == 0) {
                     //! Get user alternative email if present based on office mail id
-                    let userRedisEmailScreenshot = await this.redisService.getClient().get(`${userDetails.email}_screenshot`);
+                    let userRedisEmailScreenshot = await this.redis.get(`${userDetails.email}_screenshot`);
                     let storedUserEmail = userDetails.email
 
                     let userDrivePattern: any;
@@ -170,13 +171,13 @@ export class ScreenshotService {
                         //! If Rename is success then update email with alternative email
     
                         //! Save new alternative email to redis
-                        await this.redisService.getClient().set(`${storedUserEmail}_screenshot`, `${userDrivePattern}`);
+                        await this.redis.set(`${storedUserEmail}_screenshot`, `${userDrivePattern}`);
                     } 
                     else {
                         if(userRedisEmailScreenshot) {
                             email = userDrivePattern;
                         }
-                        await this.redisService.getClient().set(`${storedUserEmail}_screenshot`, `${storedUserEmail}`);
+                        await this.redis.set(`${storedUserEmail}_screenshot`, `${storedUserEmail}`);
                     }
                 }
             } catch (error) {
@@ -270,14 +271,14 @@ export class ScreenshotService {
             let storage = null;
             let dbStorageData = null;
             try {
-                let getScrnStorageData = await this.redisService.getClient().get(`${userData.organization_id}_storage_creds`);
+                let getScrnStorageData = await this.redis.get(`${userData.organization_id}_storage_creds`);
                 if(getScrnStorageData) {
                     dbStorageData = JSON.parse(getScrnStorageData);
                 }
                 else {
                     dbStorageData = await this.integrationModel.findOne(userData.organization_id);
                     if (dbStorageData?.organizationproviders?.orgProCreds?.is_expired === 1) return this.endRequest(400, 'Storage access failed, please check your credentials.', files);
-                    await this.redisService.getClient().set(`${userData.organization_id}_storage_creds`, JSON.stringify(dbStorageData), 'EX', 28800);
+                    await this.redis.set(`${userData.organization_id}_storage_creds`, JSON.stringify(dbStorageData), 'EX', 28800);
                 }
                 storage = JSON.parse(dbStorageData.organizationproviders.orgProCreds.creds);
                 // ({ dbStorageData, storage } = testZHCredentials);
