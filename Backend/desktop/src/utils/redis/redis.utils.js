@@ -19,9 +19,9 @@ client.on("error", function (err) {
 
 client.connect().catch(err => console.error("Redis utils connect failed:", err.message));
 
-const getAsync = (key) => client.get(key);
-const setAsync = (key, value) => client.set(key, value);
-const delAsync = (key) => client.del(key);
+const getAsync = (key) => client.get(String(key));
+const setAsync = (key, value) => client.set(String(key), String(value));
+const delAsync = (key) => client.del(String(key));
 
 
 

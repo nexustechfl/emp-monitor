@@ -19,8 +19,8 @@ client.on("error", function (err) {
 
 client.connect().catch(err => console.error("Redis auth connect failed:", err.message));
 
-const getAsync = (key) => client.get(key);
-const setAsync = (key, value) => client.set(key, value);
+const getAsync = (key) => client.get(String(key));
+const setAsync = (key, value) => client.set(String(key), String(value));
 
 
 
