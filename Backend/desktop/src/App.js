@@ -138,16 +138,12 @@ class App {
             saveUninitialized: true
         }
 
-        // Redis for session mamangement across cluster
-        if (process.env.VERSION !== 'V3' && (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'development')) {
-            const redisClient = require('redis').createClient({
-                port: 6379,
-                host: process.env.REDIS_HOST,
-                password: process.env.REDIS_PASSWORD
-            });
-            const { RedisStore } = require('connect-redis');
-            sessionObj['store'] = new RedisStore({ client: redisClient });
-        }
+        // Redis for session management across cluster (disabled for V3)
+        // if (process.env.VERSION !== 'V3' && (process.env.NODE_ENV === 'production' || process.env.NODE_ENV === 'development')) {
+        //     const redisClient = require('redis').createClient({ url: `redis://${process.env.REDIS_HOST || 'localhost'}:6379` });
+        //     const { RedisStore } = require('connect-redis');
+        //     sessionObj['store'] = new RedisStore({ client: redisClient });
+        // }
         // app.use(session(sessionObj));
 
         app.use((req, res, next) => {

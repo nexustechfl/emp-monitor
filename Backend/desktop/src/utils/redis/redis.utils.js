@@ -1,24 +1,27 @@
 const redis = require("redis");
-const client = redis.createClient({
-    port: 6379,
-    host: process.env.REDIS_HOST,
-    password: process.env.REDIS_PASSWORD
-});
 
-client.on("ready", function (conn) {
-    console.log("=== Redis server conencted from Utils ===");
+const redisPassword = process.env.REDIS_PASSWORD;
+const redisHost = process.env.REDIS_HOST || "localhost";
+const redisUrl = redisPassword
+    ? `redis://:${encodeURIComponent(redisPassword)}@${redisHost}:6379`
+    : `redis://${redisHost}:6379`;
+
+const client = redis.createClient({ url: redisUrl });
+
+client.on("ready", function () {
+    console.log("=== Redis server connected (utils) ===");
 });
 
 client.on("error", function (err) {
-    console.log("=== Error in connecting redis server ===");
-    console.error(err);
+    console.log("=== Error in connecting redis server (utils) ===");
+    console.error(err.message);
 });
 
+client.connect().catch(err => console.error("Redis utils connect failed:", err.message));
 
-const { promisify } = require("util");
-const getAsync = promisify(client.get).bind(client);
-const setAsync = promisify(client.set).bind(client);
-const delAsync = promisify(client.del).bind(client);
+const getAsync = (key) => client.get(key);
+const setAsync = (key, value) => client.set(key, value);
+const delAsync = (key) => client.del(key);
 
 
 
