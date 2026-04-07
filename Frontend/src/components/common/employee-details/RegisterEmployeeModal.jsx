@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { UserCircle, Loader2 } from "lucide-react";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
@@ -10,12 +11,13 @@ import EmployeeFormBody from "./EmployeeFormBody";
 import { registerEmployee } from "@/page/protected/admin/employee-details/service";
 
 export default function RegisterEmployeeModal({ open, onOpenChange, locations = [], roles = [], shifts = [], onSuccess }) {
+  const { t } = useTranslation();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState(null); // { type: "success"|"error", msg }
 
-  const { form, set, reset, errors, departments, deptLoading, validate, buildFormData } = useEmployeeForm(locations);
+  const { form, set, reset, errors, setErrors, departments, deptLoading, validate, buildFormData } = useEmployeeForm(locations);
 
   const handleSubmit = async () => {
     if (!validate()) return;
@@ -24,13 +26,31 @@ export default function RegisterEmployeeModal({ open, onOpenChange, locations = 
     const res = await registerEmployee(await buildFormData());
     setSubmitting(false);
     if (res?.code === 200) {
-      setStatus({ type: "success", msg: "Employee registered successfully." });
+      setStatus({ type: "success", msg: t("emp_registered_successfully") });
       reset();
       onSuccess?.();
       setTimeout(() => { onOpenChange(false); setStatus(null); }, 1200);
     } else {
-      const errMsg = res?.message || res?.msg || res?.error || res?.data?.message || "Registration failed. Please try again.";
-      setStatus({ type: "error", msg: errMsg });
+      const errMsg = res?.error || res?.message || res?.msg || res?.data?.message || t("emp_registration_failed");
+      const errLower = (errMsg || "").toLowerCase();
+      const fieldErrors = {};
+
+      if (errLower.includes("password"))       fieldErrors.password = errMsg;
+      if (errLower.includes("email"))          fieldErrors.email = errMsg;
+      if (errLower.includes("first_name") || errLower.includes("first name"))  fieldErrors.firstName = errMsg;
+      if (errLower.includes("last_name") || errLower.includes("last name"))    fieldErrors.lastName = errMsg;
+      if (errLower.includes("emp_code") || errLower.includes("employee code")) fieldErrors.employeeCode = errMsg;
+      if (errLower.includes("location"))       fieldErrors.locationId = errMsg;
+      if (errLower.includes("department"))     fieldErrors.departmentId = errMsg;
+      if (errLower.includes("role"))           fieldErrors.roleId = errMsg;
+      if (errLower.includes("phone") || errLower.includes("mobile")) fieldErrors.mobile = errMsg;
+      if (errLower.includes("timezone"))       fieldErrors.timezone = errMsg;
+
+      if (Object.keys(fieldErrors).length > 0) {
+        setErrors((prev) => ({ ...prev, ...fieldErrors }));
+      } else {
+        setStatus({ type: "error", msg: errMsg });
+      }
     }
   };
 
@@ -48,11 +68,11 @@ export default function RegisterEmployeeModal({ open, onOpenChange, locations = 
               <div className="w-1 self-stretch rounded-xl bg-blue-500 flex-shrink-0" />
               <div>
                 <DialogTitle className="text-2xl sm:text-[26px] leading-tight font-normal tracking-tight">
-                  <span className="font-extrabold">Add</span>{" "}
-                  <span className="font-semibold">Employee</span>
+                  <span className="font-extrabold">{t("emp_add")}</span>{" "}
+                  <span className="font-semibold">{t("employee")}</span>
                 </DialogTitle>
                 <DialogDescription className="text-[11px] text-blue-500 mt-1.5 italic">
-                  Fill in the details to register a new employee.
+                  {t("emp_fill_details_register")}
                 </DialogDescription>
               </div>
             </div>
@@ -79,13 +99,13 @@ export default function RegisterEmployeeModal({ open, onOpenChange, locations = 
         <DialogFooter className="px-8 pb-7 pt-2 flex flex-row items-center justify-end gap-3">
           <DialogClose asChild>
             <Button variant="outline" className="h-10 px-7 rounded-xl text-[13px] font-semibold">
-              Close
+              {t("close")}
             </Button>
           </DialogClose>
           <Button onClick={handleSubmit} disabled={submitting}
             className="h-10 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-semibold gap-2">
             {submitting && <Loader2 size={14} className="animate-spin" />}
-            Register Employee
+            {t("emp_register_employee")}
           </Button>
         </DialogFooter>
       </DialogContent>

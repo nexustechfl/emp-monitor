@@ -1,17 +1,19 @@
 import React, { useEffect, useState, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import EmployeeDetailsTable from "@/components/common/employee-details/EmployeeDetails";
 import EmployeeFilter from "@/components/common/employee-details/EmployeeFilter";
-import { fetchEmployees, fetchRemovedUsers, mapEmployeeForTable, fetchFilterOptions } from "./service";
+import { fetchEmployees, mapEmployeeForTable, fetchFilterOptions } from "./service";
 
 // Tab → activeStatus sent to the API
 const TAB_STATUS = { active: "1", suspended: "2", deleted: "3" };
 
-const ALL_ROLES       = [{ value: "all", label: "All Roles" }];
-const ALL_LOCATIONS   = [{ value: "all", label: "All Locations" }];
-const ALL_DEPARTMENTS = [{ value: "all", label: "All Departments" }];
-const ALL_SHIFTS      = [{ value: "all", label: "All Shifts" }];
-
 const EmployeeDetails = () => {
+  const { t } = useTranslation();
+
+  const ALL_ROLES       = [{ value: "all", label: t("allRoles") }];
+  const ALL_LOCATIONS   = [{ value: "all", label: t("allLocations") }];
+  const ALL_DEPARTMENTS = [{ value: "all", label: t("allDepartments") }];
+  const ALL_SHIFTS      = [{ value: "all", label: t("allShifts") }];
   const [activeTab, setActiveTab]             = useState("active");
   const [locationValue, setLocationValue]     = useState("all");
   const [departmentValue, setDepartmentValue] = useState("all");
@@ -23,6 +25,14 @@ const EmployeeDetails = () => {
   const [locations, setLocations]   = useState(ALL_LOCATIONS);
   const [departments, setDepartments] = useState(ALL_DEPARTMENTS);
   const [shifts, setShifts]         = useState(ALL_SHIFTS);
+
+  // Keep dropdown defaults in sync with language changes
+  useEffect(() => {
+    setRoles((prev) => [{ value: "all", label: t("allRoles") }, ...prev.slice(1)]);
+    setLocations((prev) => [{ value: "all", label: t("allLocations") }, ...prev.slice(1)]);
+    setDepartments((prev) => [{ value: "all", label: t("allDepartments") }, ...prev.slice(1)]);
+    setShifts((prev) => [{ value: "all", label: t("allShifts") }, ...prev.slice(1)]);
+  }, [t]);
 
   // Raw options without the "All" prefix — passed to modals
   const [rawRoles, setRawRoles]         = useState([]);
@@ -45,19 +55,14 @@ const EmployeeDetails = () => {
   const loadEmployees = useCallback(async () => {
     setLoading(true);
     try {
-      if (activeTab === "deleted") {
-        const { employees: raw } = await fetchRemovedUsers();
-        setEmployees(raw.map(mapEmployeeForTable).filter((e) => e.email && e.email !== "-"));
-      } else {
-        const { employees: raw } = await fetchEmployees({
-          activeStatus:  TAB_STATUS[activeTab],
-          locationId:    locationValue   === "all" ? "" : locationValue,
-          departmentId:  departmentValue === "all" ? "" : departmentValue,
-          roleId:        roleValue       === "all" ? "" : roleValue,
-          shiftId:       shiftValue      === "all" ? -1 : shiftValue,
-        });
-        setEmployees(raw.map(mapEmployeeForTable).filter((e) => e.email && e.email !== "-"));
-      }
+      const { employees: raw } = await fetchEmployees({
+        activeStatus:  TAB_STATUS[activeTab],
+        locationId:    locationValue   === "all" ? "" : locationValue,
+        departmentId:  departmentValue === "all" ? "" : departmentValue,
+        roleId:        roleValue       === "all" ? "" : roleValue,
+        shiftId:       shiftValue      === "all" ? -1 : shiftValue,
+      });
+      setEmployees(raw.map(mapEmployeeForTable).filter((e) => e.email && e.email !== "-"));
     } finally {
       setLoading(false);
     }

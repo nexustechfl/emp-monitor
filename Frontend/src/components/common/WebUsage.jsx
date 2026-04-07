@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import * as am5 from "@amcharts/amcharts5";
 import * as am5percent from "@amcharts/amcharts5/percent";
 import am5themes_Animated from "@amcharts/amcharts5/themes/Animated";
@@ -6,7 +7,7 @@ import CustomTab from "../../components/common/elements/CustomTab";
 
 const fallbackData = {
   today: [
-   
+
   ],
   yesterday: [
    
@@ -16,11 +17,13 @@ const fallbackData = {
   ],
 };
 
-export default function WebUsageChart({ 
-  data, 
-  title = "Top 10 Website Usage",
+export default function WebUsageChart({
+  data,
+  title,
   report
 }) {
+  const { t } = useTranslation();
+  const resolvedTitle = title || t("topTenWebUsage");
   const chartRef = useRef(null);
   const rootRef = useRef(null);
   const seriesRef = useRef(null);
@@ -69,13 +72,24 @@ export default function WebUsageChart({
       tooltipText: "{category}: {value}%",
     });
 
+    series.slices.template.adapters.add("tooltipText", (text, target) => {
+      const dataItem = target.dataItem;
+      if (dataItem) {
+        const name = dataItem.get("category") || "";
+        const truncated = name.length > 20 ? name.slice(0, 20) + "..." : name;
+        const val = dataItem.get("value") || 0;
+        return `${truncated}: ${val}%`;
+      }
+      return text;
+    });
+
     series.slices.template.states.create("hover", { scale: 1.04 });
     series.labels.template.set("visible", false);
     series.ticks.template.set("visible", false);
 
     root.container.children.push(
       am5.Label.new(root, {
-        text: "Website",
+        text: t("website"),
         fontSize: 13,
         fontWeight: "500",
         fill: am5.color(0x6b7280),
@@ -125,9 +139,9 @@ export default function WebUsageChart({
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h2 className="text-slate-900 font-semibold text-xl sm:text-2xl">
-            {title}
+            {resolvedTitle}
           </h2>
-          <p className="text-xs text-gray-400 mt-0.5">From 1–6 Dec, 2020</p>
+          <p className="text-xs text-gray-400 mt-0.5">{t("fromDateRange")}</p>
         </div>
 
         {report}
