@@ -157,7 +157,8 @@ const EmpInsights = () => {
               <span className="font-semibold">{t("employee")}</span> {t("insights_title")}
             </h2>
             <p className="text-xs text-gray-400 mt-1 max-w-sm leading-5">
-            
+
+
             </p>
           </div>
           <div className="absolute right-0 -top-4 hidden lg:flex items-end gap-1 mr-2">
@@ -209,7 +210,7 @@ const EmpInsights = () => {
         />
       </div>
 
-     
+
 
         <div className="flex items-center gap-6 w-full mt-8  border-t border-[#6B6B6B]/20 pt-4">
           <div className="flex items-center gap-2 min-w-fit">
@@ -240,7 +241,7 @@ const EmpInsights = () => {
       {loading ? <p className="text-xs text-slate-400 mt-3">{t("insights_loading")}</p> : null}
 
     </div>
-    
+
   );
 };
 

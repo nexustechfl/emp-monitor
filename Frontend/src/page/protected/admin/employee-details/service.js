@@ -263,4 +263,3 @@ export const mapEmployeeForTable = (emp, idx = 0) => {
     version: emp.software_version || "N/A"
   };
 };
-

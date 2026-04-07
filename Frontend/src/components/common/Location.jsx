@@ -36,19 +36,19 @@ const LOCATION_COORDINATES = {
 const getLocationCoordinates = (locationName) => {
   if (!locationName) return null;
   const normalizedName = locationName.toLowerCase().trim();
-  
+
   // Try exact match first
   if (LOCATION_COORDINATES[normalizedName]) {
     return LOCATION_COORDINATES[normalizedName];
   }
-  
+
   // Try partial match
   for (const [key, coords] of Object.entries(LOCATION_COORDINATES)) {
     if (normalizedName.includes(key) || key.includes(normalizedName)) {
       return coords;
     }
   }
-  
+
   // Default to center of India if not found
   return { latitude: 20.5937, longitude: 78.9629 };
 };

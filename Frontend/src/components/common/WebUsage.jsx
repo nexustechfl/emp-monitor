@@ -10,10 +10,10 @@ const fallbackData = {
 
   ],
   yesterday: [
-   
+
   ],
   thisWeek: [
-    
+
   ],
 };
 
