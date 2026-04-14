@@ -62,7 +62,11 @@ const EmployeeDetails = () => {
         roleId:        roleValue       === "all" ? "" : roleValue,
         shiftId:       shiftValue      === "all" ? -1 : shiftValue,
       });
-      setEmployees(raw.map(mapEmployeeForTable).filter((e) => e.email && e.email !== "-"));
+      // Show every employee the API returned — desktop-agent auto-created
+      // users legitimately have email = null (they were registered from the
+      // Windows agent, not invited via email), and filtering on email hid
+      // them from the list entirely.
+      setEmployees(raw.map(mapEmployeeForTable));
     } finally {
       setLoading(false);
     }
