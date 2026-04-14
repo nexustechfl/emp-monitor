@@ -191,10 +191,13 @@ class OrganizationValidator {
             return obj().keys({
                 status: bool(),
                 time: obj().keys({
-                    start: time().required(),
+                    // Accept either a valid HH:mm string OR empty/null — disabled
+                    // days (status: false) legitimately send empty time fields
+                    // and should not block the whole save.
+                    start: joi.alternatives().try([time(), joi.string().valid('', null)]),
                     // end: time().greater(joi.ref('start')).required()
                     //     .error(_ => 'End time must be more than start time'),
-                    end: time().required()
+                    end: joi.alternatives().try([time(), joi.string().valid('', null)]),
                 }),
             });
         };
