@@ -89,7 +89,7 @@ export const AdminLogin = () => {
         return;
       }
 
-      setAdmin(result.data);
+      setAdmin(result);
       syncLanguageFromSession();
       navigate("/admin/dashboard");
     } catch (err) {
