@@ -45,11 +45,14 @@ async function syncUser(req, res) {
             );
             const { orgId: targetOrgId } = await authModel.getOrCreateMonitorOrgForEmpcloudOrg(organization_id, email);
             if (!existingEmp) {
-                await createEmployeeRecord(existing.id, organization_id, email);
+                await createEmployeeRecord(existing.id, organization_id, email, role);
             } else if (existingEmp.organization_id !== targetOrgId) {
                 await db.query('UPDATE employees SET organization_id = ?, updated_at = NOW() WHERE id = ?', [targetOrgId, existingEmp.id]);
                 console.log('Sync: repointed employee', existingEmp.id, 'to org', targetOrgId);
             }
+
+            // Also reconcile the role on update — the EmpCloud role may have changed
+            await upsertUserRole(existing.id, targetOrgId, role);
 
             return res.json({ code: 200, message: 'User updated', data: { id: existing.id, email, empcloud_user_id } });
         }
@@ -63,7 +66,7 @@ async function syncUser(req, res) {
         const newUserId = result.insertId;
 
         // Create employee + role so user shows on dashboard
-        await createEmployeeRecord(newUserId, organization_id, email);
+        await createEmployeeRecord(newUserId, organization_id, email, role);
 
         return res.json({ code: 201, message: 'User created', data: { id: newUserId, email, empcloud_user_id } });
     } catch (error) {
@@ -73,11 +76,81 @@ async function syncUser(req, res) {
 }
 
 /**
+ * Map an EmpCloud role string to the matching emp-monitor role name.
+ * EmpCloud uses lowercase tokens (employee/manager/hr_manager/admin/team_lead);
+ * emp-monitor uses Title Case (Employee/Manager/Team Lead/Admin) seeded by
+ * auth.model.js bootstrap. Unknown / missing → Employee (safe default).
+ */
+function mapEmpCloudRoleToMonitorName(empcloudRole) {
+    if (!empcloudRole || typeof empcloudRole !== 'string') return 'Employee';
+    const r = empcloudRole.trim().toLowerCase().replace(/[\s_-]+/g, '_');
+    if (r === 'admin' || r === 'super_admin' || r === 'org_admin') return 'Admin';
+    if (r === 'manager' || r === 'hr_manager' || r === 'people_manager') return 'Manager';
+    if (r === 'team_lead' || r === 'teamlead' || r === 'lead') return 'Team Lead';
+    return 'Employee';
+}
+
+/**
+ * Resolve a roles row id by name (case-insensitive) within an org. Returns
+ * null if no match — caller is responsible for the fallback.
+ */
+async function findRoleIdByName(monitorOrgId, roleName) {
+    if (!roleName) return null;
+    const [row] = await db.query(
+        'SELECT id FROM roles WHERE organization_id = ? AND LOWER(name) = LOWER(?) LIMIT 1',
+        [monitorOrgId, roleName]
+    );
+    return row ? row.id : null;
+}
+
+/**
+ * Insert or update the user_role row so it points at the correct emp-monitor
+ * role for the given EmpCloud role string. Falls back to Employee, then to
+ * the org's lowest role id, so we never leave a synced user role-less.
+ */
+async function upsertUserRole(userId, monitorOrgId, empcloudRole) {
+    const targetName = mapEmpCloudRoleToMonitorName(empcloudRole);
+    let roleId = await findRoleIdByName(monitorOrgId, targetName);
+    if (!roleId && targetName !== 'Employee') {
+        roleId = await findRoleIdByName(monitorOrgId, 'Employee');
+    }
+    if (!roleId) {
+        // Last resort: pick the LOWEST role id in this org (Employee is
+        // typically the first one inserted) instead of the highest, which
+        // was the legacy bug that made everyone a Team Lead.
+        const [fallback] = await db.query(
+            'SELECT id FROM roles WHERE organization_id = ? ORDER BY id ASC LIMIT 1',
+            [monitorOrgId]
+        );
+        roleId = fallback ? fallback.id : null;
+    }
+    if (!roleId) {
+        console.error('Sync: no role row found for org', monitorOrgId, '— skipping user_role insert');
+        return;
+    }
+
+    const [existingRole] = await db.query(
+        'SELECT id, role_id FROM user_role WHERE user_id = ? LIMIT 1', [userId]
+    );
+    if (!existingRole) {
+        await db.query(
+            'INSERT INTO user_role (user_id, role_id, created_by) VALUES (?, ?, ?)',
+            [userId, roleId, userId]
+        );
+    } else if (existingRole.role_id !== roleId) {
+        await db.query(
+            'UPDATE user_role SET role_id = ? WHERE id = ?',
+            [roleId, existingRole.id]
+        );
+    }
+}
+
+/**
  * Creates employee + user_role records for a user in the monitor org that
  * mirrors the caller's empcloud org. Auto-provisions the monitor org on
  * first use so every empcloud tenant gets its own isolated dashboard.
  */
-async function createEmployeeRecord(userId, empcloudOrgId, ownerEmail) {
+async function createEmployeeRecord(userId, empcloudOrgId, ownerEmail, empcloudRole) {
     if (!empcloudOrgId) {
         console.error('Sync: empcloudOrgId missing, cannot route employee to correct org');
         return;
@@ -113,22 +186,10 @@ async function createEmployeeRecord(userId, empcloudOrgId, ownerEmail) {
         [userId, monitorOrgId, dept ? dept.id : null, loc ? loc.id : null, shift ? shift.id : 0]
     );
 
-    // Assign default employee role (role_id 4 = employee in most monitor setups)
-    const [empRole] = await db.query(
-        'SELECT id FROM roles WHERE organization_id = ? ORDER BY id DESC LIMIT 1',
-        [monitorOrgId]
-    );
-    const roleId = empRole ? empRole.id : 4;
-
-    const [existingRole] = await db.query(
-        'SELECT id FROM user_role WHERE user_id = ? LIMIT 1', [userId]
-    );
-    if (!existingRole) {
-        await db.query(
-            'INSERT INTO user_role (user_id, role_id, created_by) VALUES (?, ?, ?)',
-            [userId, roleId, userId]
-        );
-    }
+    // Map the EmpCloud role to the matching emp-monitor role (Employee/
+    // Manager/Team Lead/Admin) instead of always picking the last-inserted
+    // role row, which was the bug that flagged every synced user as Team Lead.
+    await upsertUserRole(userId, monitorOrgId, empcloudRole);
 
     // Update org user count
     await db.query(
@@ -228,7 +289,7 @@ async function bulkSyncUsers(req, res) {
 
         for (const userData of users) {
             try {
-                const { empcloud_user_id, organization_id, email, first_name, last_name } = userData;
+                const { empcloud_user_id, organization_id, email, first_name, last_name, role } = userData;
                 if (!empcloud_user_id || !email) { results.push({ empcloud_user_id, status: 'skipped', error: 'Missing data' }); continue; }
 
                 const [existing] = await db.query(
@@ -242,7 +303,10 @@ async function bulkSyncUsers(req, res) {
                     );
                     // Ensure employee exists
                     const [emp] = await db.query('SELECT id FROM employees WHERE user_id = ? LIMIT 1', [existing.id]);
-                    if (!emp) await createEmployeeRecord(existing.id, organization_id, email);
+                    if (!emp) await createEmployeeRecord(existing.id, organization_id, email, role);
+                    // Reconcile role on every sync (handles role changes in EmpCloud)
+                    const { orgId: targetOrgId } = await authModel.getOrCreateMonitorOrgForEmpcloudOrg(organization_id, email);
+                    await upsertUserRole(existing.id, targetOrgId, role);
                     results.push({ empcloud_user_id, status: 'updated' });
                 } else {
                     const insertResult = await db.query(
@@ -250,7 +314,7 @@ async function bulkSyncUsers(req, res) {
                          VALUES (?, ?, ?, ?, ?, 1, NOW(), NOW())`,
                         [email, email, first_name || '', last_name || '', empcloud_user_id]
                     );
-                    await createEmployeeRecord(insertResult.insertId, organization_id, email);
+                    await createEmployeeRecord(insertResult.insertId, organization_id, email, role);
                     results.push({ empcloud_user_id, status: 'created' });
                 }
             } catch (err) {
