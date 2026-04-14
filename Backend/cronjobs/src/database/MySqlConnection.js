@@ -23,7 +23,16 @@ class MySqlSingelton {
             password: process.env.MYSQL_PASSWORD,
             database: process.env.MYSQL_DBNAME,
             timezone: 'Z',
-            charset: 'utf8mb4'
+            charset: 'utf8mb4',
+            // mysql2 v3 auto-parses MySQL JSON columns into JS objects;
+            // preserve the legacy string return so existing
+            // JSON.parse(row.jsonCol) call sites continue to work.
+            typeCast: function (field, next) {
+                if (field.type === 'JSON') {
+                    return field.string();
+                }
+                return next();
+            }
         });
 
         // Disable ONLY_FULL_GROUP_BY to maintain MariaDB-compatible GROUP BY behavior

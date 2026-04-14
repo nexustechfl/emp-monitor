@@ -34,7 +34,17 @@ class MySqlSingelton {
                 password: process.env.MYSQL_PASSWORD,
                 database: process.env.MYSQL_DBNAME,
                 timezone: 'Z',
-                charset: 'utf8mb4'
+                charset: 'utf8mb4',
+                // mysql2 v3 auto-parses MySQL JSON columns into JS objects;
+                // the legacy `mysql` driver returned them as strings. Keep
+                // the legacy behavior so existing JSON.parse(row.pack) /
+                // JSON.parse(user.shift) call sites continue to work.
+                typeCast: function (field, next) {
+                    if (field.type === 'JSON') {
+                        return field.string();
+                    }
+                    return next();
+                }
             });
         }
 
