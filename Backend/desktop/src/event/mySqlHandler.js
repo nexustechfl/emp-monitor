@@ -1,4 +1,4 @@
-const mysql = require('mysql');
+const mysql = require('mysql2');
 const mySql = require('../database/MySqlConnection').getInstance();
 
 exports.getAttendanceId = ({ employee_id, organization_id, date }) => {

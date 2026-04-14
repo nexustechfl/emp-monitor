@@ -63,7 +63,7 @@
         "mongoose-double": "0.0.1",
         "morgan": "^1.10.1",
         "multer": "^2.1.1",
-        "mysql": "^2.18.1",
+        "mysql2": "^3.11.0",
         "node-resque": "^9.3.5",
         "nodemailer": "^8.0.4",
         "oauth": "^0.10.0",

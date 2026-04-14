@@ -1,6 +1,6 @@
 'use strict';
 
-const { format: formatSql } = require('mysql');
+const { format: formatSql } = require('mysql2');
 
 const mySql = require('../../../database/MySqlConnection').getInstance();
 

@@ -1,6 +1,6 @@
 const {
 	format: formatSql
-} = require('mysql');
+} = require('mysql2');
 const _ = require('lodash');
 const moment = require('moment');
 

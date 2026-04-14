@@ -1,4 +1,4 @@
-const { format: formatSql } = require('mysql');
+const { format: formatSql } = require('mysql2');
 const moment = require('moment-timezone');
 const _ = require('lodash');
 

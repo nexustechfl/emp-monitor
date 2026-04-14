@@ -42,7 +42,7 @@
 		"moment-timezone": "^0.5.31",
 		"mongoose": "^9.3.3",
 		"mongoose-double": "0.0.1",
-		"mysql": "^2.18.1",
+		"mysql2": "^3.11.0",
 		"node-fetch": "^2.7.0",
 		"nodemailer": "^8.0.4",
 		"one-drive-api-pools": "^1.0.4",
